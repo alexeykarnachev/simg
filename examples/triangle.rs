@@ -6,9 +6,12 @@ use simg::renderer::color::*;
 use simg::renderer::*;
 
 pub fn main() {
+    let width = 800.0;
+    let height = 600.0;
     let sdl2 = sdl2::init().unwrap();
     let event_pump = Box::leak(Box::new(sdl2.event_pump().unwrap()));
-    let mut renderer = Renderer::new(&sdl2, "triangle", 800, 600);
+    let mut renderer =
+        Renderer::new(&sdl2, "triangle", width as u32, height as u32);
 
     'main: loop {
         for event in event_pump.poll_iter() {
@@ -18,20 +21,21 @@ pub fn main() {
             }
         }
 
+        renderer.begin_drawing();
         renderer.clear_color(WHITE);
-        renderer.push_triangle(
-            Vector2::new(0.0, 0.5),
-            Vector2::new(-0.5, 0.0),
-            Vector2::new(0.5, 0.0),
+        renderer.draw_triangle(
+            Vector2::new(width / 2.0, height),
+            Vector2::new(0.0, height / 2.0),
+            Vector2::new(width, height / 2.0),
             GREEN,
         );
-        renderer.push_triangle(
-            Vector2::new(0.0, -0.5),
-            Vector2::new(0.5, 0.0),
-            Vector2::new(-0.5, 0.0),
+        renderer.draw_triangle(
+            Vector2::new(width / 2.0, 0.0),
+            Vector2::new(width, height / 2.0),
+            Vector2::new(0.0, height / 2.0),
             RED,
         );
-        renderer.draw();
+        renderer.end_drawing();
         renderer.swap_window();
     }
 }

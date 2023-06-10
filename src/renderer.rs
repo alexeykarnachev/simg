@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use nalgebra::Vector2;
+use nalgebra::{Matrix4, Vector2};
 use std::mem::size_of;
 
 use color::*;
@@ -46,6 +46,7 @@ pub mod color {
 
 pub struct Renderer {
     window: sdl2::video::Window,
+    window_size: (u32, u32),
     gl: glow::Context,
     program: glow::NativeProgram,
 
@@ -56,6 +57,8 @@ pub struct Renderer {
     n_vertices: usize,
     positions: [f32; MAX_N_VERTICES * 3],
     colors: [f32; MAX_N_VERTICES * 4],
+
+    transform: Matrix4<f32>,
 }
 
 impl Renderer {
@@ -74,6 +77,7 @@ impl Renderer {
             .resizable()
             .build()
             .unwrap();
+        let window_size = window.size();
 
         let gl_attr = video.gl_attr();
         gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
@@ -122,6 +126,7 @@ impl Renderer {
 
         Self {
             window,
+            window_size,
             gl,
             program,
 
@@ -132,6 +137,8 @@ impl Renderer {
             n_vertices: 0,
             positions: [0.0; MAX_N_VERTICES * 3],
             colors: [0.0; MAX_N_VERTICES * 4],
+
+            transform: Matrix4::identity(),
         }
     }
 
@@ -142,11 +149,7 @@ impl Renderer {
         }
     }
 
-    pub fn push_vertex_2d(
-        &mut self,
-        position: Vector2<f32>,
-        color: Color,
-    ) {
+    fn draw_vertex_2d(&mut self, position: Vector2<f32>, color: Color) {
         let idx = self.n_vertices;
         self.positions[idx * 3 + 0] = position.x;
         self.positions[idx * 3 + 1] = position.y;
@@ -160,20 +163,40 @@ impl Renderer {
         self.n_vertices += 1;
     }
 
-    pub fn push_triangle(
+    pub fn draw_triangle(
         &mut self,
         a: Vector2<f32>,
         b: Vector2<f32>,
         c: Vector2<f32>,
         color: Color,
     ) {
-        self.push_vertex_2d(a, color);
-        self.push_vertex_2d(b, color);
-        self.push_vertex_2d(c, color);
+        self.draw_vertex_2d(a, color);
+        self.draw_vertex_2d(b, color);
+        self.draw_vertex_2d(c, color);
     }
 
-    pub fn draw(&mut self) {
+    pub fn begin_drawing(&mut self) {
+        self.window_size = self.window.size();
+
+        self.transform.fill_with_identity();
+        self.transform *= Matrix4::new_orthographic(
+            0.0,
+            self.window_size.0 as f32,
+            0.0,
+            self.window_size.1 as f32,
+            0.0,
+            1.0,
+        );
+    }
+
+    pub fn end_drawing(&mut self) {
         unsafe {
+            self.gl.viewport(
+                0,
+                0,
+                self.window_size.0 as i32,
+                self.window_size.1 as i32,
+            );
             self.gl.bind_vertex_array(Some(self.vao));
 
             self.gl
@@ -190,6 +213,14 @@ impl Renderer {
                 glow::ARRAY_BUFFER,
                 0,
                 cast_slice_to_u8(&self.colors[0..self.n_vertices * 4]),
+            );
+
+            self.gl.uniform_matrix_4_f32_slice(
+                self.gl
+                    .get_uniform_location(self.program, "u_transform")
+                    .as_ref(),
+                false,
+                self.transform.as_slice(),
             );
 
             self.gl.use_program(Some(self.program));
