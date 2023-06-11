@@ -1,7 +1,10 @@
 #![allow(dead_code)]
+#![allow(unused_imports)]
+
 use nalgebra::{Matrix4, Vector2};
 use std::mem::size_of;
 
+use camera::*;
 use color::*;
 use glow::HasContext;
 
@@ -42,6 +45,45 @@ pub mod color {
         b: 1.0,
         a: 1.0,
     };
+}
+
+pub mod camera {
+    use nalgebra::{Matrix4, Vector2, Vector3};
+
+    #[derive(Clone, Copy)]
+    pub struct Camera2D {
+        pub position: Vector2<f32>,
+        pub rotation: f32,
+        pub zoom: f32,
+    }
+
+    impl Camera2D {
+        pub fn new(position: Vector2<f32>) -> Self {
+            Self {
+                position,
+                rotation: 0.0,
+                zoom: 1.0,
+            }
+        }
+
+        pub fn get_view(&self) -> Matrix4<f32> {
+            let mut scale = Matrix4::identity();
+            scale[(0, 0)] = self.zoom;
+            scale[(1, 1)] = self.zoom;
+
+            let mut translation = Matrix4::identity();
+            translation[(0, 3)] = -self.position.x;
+            translation[(1, 3)] = -self.position.y;
+
+            let rotation = Matrix4::new_rotation(Vector3::new(
+                0.0,
+                0.0,
+                -self.rotation,
+            ));
+
+            rotation * scale * translation
+        }
+    }
 }
 
 pub struct Renderer {
@@ -175,11 +217,9 @@ impl Renderer {
         self.draw_vertex_2d(c, color);
     }
 
-    pub fn begin_drawing(&mut self) {
+    pub fn begin_screen_drawing(&mut self) {
         self.window_size = self.window.size();
-
-        self.transform.fill_with_identity();
-        self.transform *= Matrix4::new_orthographic(
+        self.transform = Matrix4::new_orthographic(
             0.0,
             self.window_size.0 as f32,
             0.0,
@@ -187,6 +227,20 @@ impl Renderer {
             0.0,
             1.0,
         );
+    }
+
+    pub fn begin_2d_drawing(&mut self, camera: Camera2D) {
+        self.window_size = self.window.size();
+        let view = camera.get_view();
+        let projection = Matrix4::new_orthographic(
+            self.window_size.0 as f32 / -2.0,
+            self.window_size.0 as f32 / 2.0,
+            self.window_size.1 as f32 / -2.0,
+            self.window_size.1 as f32 / 2.0,
+            0.0,
+            1.0,
+        );
+        self.transform = projection * view;
     }
 
     pub fn end_drawing(&mut self) {

@@ -2,6 +2,7 @@
 
 use nalgebra::Vector2;
 use sdl2::event::Event;
+use simg::renderer::camera::*;
 use simg::renderer::color::*;
 use simg::renderer::*;
 
@@ -13,6 +14,10 @@ pub fn main() {
     let mut renderer =
         Renderer::new(&sdl2, "triangle", width as u32, height as u32);
 
+    let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
+    camera.zoom = 0.5;
+    camera.position.x += width * 0.5;
+
     'main: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -20,8 +25,9 @@ pub fn main() {
                 _ => {}
             }
         }
+        camera.rotation += 0.01;
 
-        renderer.begin_drawing();
+        renderer.begin_screen_drawing();
         renderer.clear_color(WHITE);
         renderer.draw_triangle(
             Vector2::new(width / 2.0, height),
@@ -36,6 +42,16 @@ pub fn main() {
             RED,
         );
         renderer.end_drawing();
+
+        renderer.begin_2d_drawing(camera);
+        renderer.draw_triangle(
+            Vector2::new(0.0, 0.0),
+            Vector2::new(width / 2.0, height / 2.0),
+            Vector2::new(-width / 2.0, height / 2.0),
+            GREEN,
+        );
+        renderer.end_drawing();
+
         renderer.swap_window();
     }
 }
