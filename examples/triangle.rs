@@ -1,4 +1,5 @@
 #![allow(unused_variables)]
+#![allow(unused_mut)]
 
 use nalgebra::Vector2;
 use simg::input::*;
@@ -18,12 +19,15 @@ pub fn main() {
     camera.zoom = 0.5;
     camera.position.x += width * 0.5;
 
-    while !input.should_quit {
+    let mut update = move || {
         input.update();
         camera.rotation += 0.01;
 
-        renderer.begin_screen_drawing();
+        println!("{:?}", input.keycodes.pressed);
+
         renderer.clear_color(WHITE);
+
+        renderer.begin_screen_drawing();
         renderer.draw_triangle(
             Vector2::new(width / 2.0, height),
             Vector2::new(0.0, height / 2.0),
@@ -43,10 +47,23 @@ pub fn main() {
             Vector2::new(0.0, 0.0),
             Vector2::new(width / 2.0, height / 2.0),
             Vector2::new(-width / 2.0, height / 2.0),
-            GREEN,
+            BLUE,
         );
         renderer.end_drawing();
 
         renderer.swap_window();
+    };
+
+    #[cfg(not(target_os = "emscripten"))]
+    {
+        loop {
+            update();
+        }
+    }
+
+    #[cfg(target_os = "emscripten")]
+    {
+        use simg::emscripten::*;
+        set_main_loop_callback(update);
     }
 }

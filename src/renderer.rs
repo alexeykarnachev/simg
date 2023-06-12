@@ -21,6 +21,16 @@ pub mod color {
         pub a: f32,
     }
 
+    impl Color {
+        pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+            Self { r, g, b, a }
+        }
+
+        pub fn as_arr(&self) -> [f32; 4] {
+            [self.r, self.g, self.b, self.a]
+        }
+    }
+
     pub const WHITE: Color = Color {
         r: 1.0,
         g: 1.0,
@@ -96,9 +106,8 @@ pub struct Renderer {
     positions_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
 
-    n_vertices: usize,
-    positions: [f32; MAX_N_VERTICES * 3],
-    colors: [f32; MAX_N_VERTICES * 4],
+    positions: Vec<f32>,
+    colors: Vec<f32>,
 
     transform: Matrix4<f32>,
 }
@@ -125,14 +134,38 @@ impl Renderer {
         gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
         gl_attr.set_context_version(4, 6);
 
-        Box::leak(Box::new(window.gl_create_context().unwrap()));
+        let gl_profile;
+        let gl_major_version;
+        let gl_minor_version;
+        #[cfg(target_os = "emscripten")]
+        {
+            gl_profile = sdl2::video::GLProfile::GLES;
+            gl_major_version = 3;
+            gl_minor_version = 0;
+        }
+
+        #[cfg(not(target_os = "emscripten"))]
+        {
+            gl_profile = sdl2::video::GLProfile::Core;
+            gl_major_version = 4;
+            gl_minor_version = 6;
+        }
+
+        gl_attr.set_context_profile(gl_profile);
+        gl_attr.set_context_major_version(gl_major_version);
+        gl_attr.set_context_minor_version(gl_minor_version);
+
+        let gl_context = window.gl_create_context().unwrap();
+        window.gl_make_current(&gl_context).unwrap();
+        Box::leak(Box::new(gl_context));
+
         let gl = unsafe {
             glow::Context::from_loader_function(|s| {
                 video.gl_get_proc_address(s) as *const _
             })
         };
 
-        video.gl_set_swap_interval(1).unwrap();
+        // video.gl_set_swap_interval(1).unwrap();
 
         // ---------------------------------------------------------------
         let program =
@@ -176,9 +209,8 @@ impl Renderer {
             positions_vbo,
             colors_vbo,
 
-            n_vertices: 0,
-            positions: [0.0; MAX_N_VERTICES * 3],
-            colors: [0.0; MAX_N_VERTICES * 4],
+            positions: vec![],
+            colors: vec![],
 
             transform: Matrix4::identity(),
         }
@@ -192,17 +224,9 @@ impl Renderer {
     }
 
     fn draw_vertex_2d(&mut self, position: Vector2<f32>, color: Color) {
-        let idx = self.n_vertices;
-        self.positions[idx * 3 + 0] = position.x;
-        self.positions[idx * 3 + 1] = position.y;
-        self.positions[idx * 3 + 2] = 0.0;
-
-        self.colors[idx * 4 + 0] = color.r;
-        self.colors[idx * 4 + 1] = color.g;
-        self.colors[idx * 4 + 2] = color.b;
-        self.colors[idx * 4 + 3] = color.a;
-
-        self.n_vertices += 1;
+        self.positions.extend_from_slice(position.as_ref());
+        self.positions.push(0.0);
+        self.colors.extend_from_slice(&color.as_arr());
     }
 
     pub fn draw_triangle(
@@ -258,7 +282,7 @@ impl Renderer {
             self.gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(&self.positions[0..self.n_vertices * 3]),
+                cast_slice_to_u8(&self.positions),
             );
 
             self.gl
@@ -266,7 +290,7 @@ impl Renderer {
             self.gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(&self.colors[0..self.n_vertices * 4]),
+                cast_slice_to_u8(&self.colors),
             );
 
             self.gl.uniform_matrix_4_f32_slice(
@@ -281,11 +305,12 @@ impl Renderer {
             self.gl.draw_arrays(
                 glow::TRIANGLES,
                 0,
-                self.n_vertices as i32,
+                (self.positions.len() / 3) as i32,
             );
         }
 
-        self.n_vertices = 0;
+        self.positions.clear();
+        self.colors.clear();
     }
 
     pub fn swap_window(&self) {
