@@ -325,12 +325,23 @@ fn create_program(
 ) -> glow::NativeProgram {
     let program;
 
+    #[cfg(target_os = "emscripten")]
+    let header = r#"#version 300 es
+        #ifdef GL_ES
+        precision highp float;
+        #endif
+    "#;
+
+    #[cfg(not(target_os = "emscripten"))]
+    let header = r#"#version 460 core
+    "#;
+
     unsafe {
         program = gl.create_program().expect("Cannot create program");
 
         let shaders_src = [
-            (glow::VERTEX_SHADER, vert_src),
-            (glow::FRAGMENT_SHADER, frag_src),
+            (glow::VERTEX_SHADER, header.to_owned() + vert_src),
+            (glow::FRAGMENT_SHADER, header.to_owned() + frag_src),
         ];
 
         let mut shaders = Vec::with_capacity(shaders_src.len());

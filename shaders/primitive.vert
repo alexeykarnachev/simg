@@ -1,12 +1,3 @@
-#version 300 es
-#ifdef GL_ES
-precision highp float;
-#endif
-
-// #version 460 core
-// layout (location = 0) in vec3 a_position;
-// layout (location = 1) in vec4 a_color;
-
 in vec3 a_position;
 in vec4 a_color;
 

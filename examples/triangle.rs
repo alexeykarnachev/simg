@@ -52,18 +52,20 @@ pub fn main() {
         renderer.end_drawing();
 
         renderer.swap_window();
+
+        return !input.should_quit;
     };
 
     #[cfg(not(target_os = "emscripten"))]
     {
-        loop {
-            update();
-        }
+        while update() {}
     }
 
     #[cfg(target_os = "emscripten")]
     {
         use simg::emscripten::*;
-        set_main_loop_callback(update);
+        set_main_loop_callback(move || {
+            update();
+        });
     }
 }
