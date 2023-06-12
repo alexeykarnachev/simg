@@ -1,16 +1,19 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use image::DynamicImage;
 use nalgebra::{Matrix4, Vector2};
 use std::mem::size_of;
 
 use camera::*;
 use color::*;
-use glow::HasContext;
+use glow::{HasContext, NativeTexture};
 
 const PRIMITIVE_VERT_SRC: &str = include_str!("../shaders/primitive.vert");
 const PRIMITIVE_FRAG_SRC: &str = include_str!("../shaders/primitive.frag");
-const MAX_N_VERTICES: usize = 1 << 14;
+const MAX_N_VERTICES: usize = 1 << 10;
+const MAX_N_TEXTURES: usize = 16;
+const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
 
 pub mod color {
     #[derive(Clone, Copy)]
@@ -106,10 +109,53 @@ pub struct Renderer {
     positions_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
 
-    positions: Vec<f32>,
-    colors: Vec<f32>,
+    n_textures: usize,
+    textures: [u32; MAX_N_TEXTURES],
 
+    positions: [f32; MAX_N_VERTICES * 3],
+    colors: [f32; MAX_N_VERTICES * 4],
+
+    n_batches: usize,
+    batch_infos: [BatchInfo; MAX_N_BATCHES],
+}
+
+#[derive(Clone, Copy)]
+struct BatchInfo {
+    start: usize,
+    count: usize,
+    texture: u32,
     transform: Matrix4<f32>,
+}
+
+pub enum Projection {
+    ProjScreen,
+    Proj2D(Camera2D),
+}
+
+impl BatchInfo {
+    pub fn new(
+        start: usize,
+        texture: u32,
+        transform: Matrix4<f32>,
+    ) -> Self {
+        Self {
+            start,
+            count: 0,
+            texture,
+            transform,
+        }
+    }
+}
+
+impl Default for BatchInfo {
+    fn default() -> Self {
+        Self {
+            start: 0,
+            count: 0,
+            texture: 0,
+            transform: Matrix4::identity(),
+        }
+    }
 }
 
 impl Renderer {
@@ -209,11 +255,37 @@ impl Renderer {
             positions_vbo,
             colors_vbo,
 
-            positions: vec![],
-            colors: vec![],
+            n_textures: 0,
+            textures: [0; MAX_N_TEXTURES],
 
-            transform: Matrix4::identity(),
+            positions: [0.0; MAX_N_VERTICES * 3],
+            colors: [0.0; MAX_N_VERTICES * 4],
+
+            n_batches: 0,
+            batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
         }
+    }
+
+    pub fn load_texture_from_image(
+        &mut self,
+        image: DynamicImage,
+    ) -> usize {
+        let tex = create_texture(
+            &self.gl,
+            glow::RGBA as i32,
+            image.width() as i32,
+            image.height() as i32,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            Some(&image.as_bytes()),
+            glow::LINEAR,
+        );
+
+        let idx = self.n_textures;
+        self.textures[idx] = tex.0.get();
+        self.n_textures += 1;
+
+        return idx;
     }
 
     pub fn clear_color(&self, color: Color) {
@@ -224,9 +296,21 @@ impl Renderer {
     }
 
     fn draw_vertex_2d(&mut self, position: Vector2<f32>, color: Color) {
-        self.positions.extend_from_slice(position.as_ref());
-        self.positions.push(0.0);
-        self.colors.extend_from_slice(&color.as_arr());
+        if self.n_batches == 0 {
+            panic!("You should start a new batch before drawing!")
+        }
+        let batch_info = &mut self.batch_infos[self.n_batches - 1];
+        let idx = batch_info.start + batch_info.count;
+        self.positions[idx * 3 + 0] = position.x;
+        self.positions[idx * 3 + 1] = position.y;
+        self.positions[idx * 3 + 2] = 0.0;
+
+        self.colors[idx * 4 + 0] = color.r;
+        self.colors[idx * 4 + 1] = color.g;
+        self.colors[idx * 4 + 2] = color.b;
+        self.colors[idx * 4 + 3] = color.a;
+
+        batch_info.count += 1;
     }
 
     pub fn draw_triangle(
@@ -241,30 +325,44 @@ impl Renderer {
         self.draw_vertex_2d(c, color);
     }
 
-    pub fn begin_screen_drawing(&mut self) {
-        self.window_size = self.window.size();
-        self.transform = Matrix4::new_orthographic(
-            0.0,
-            self.window_size.0 as f32,
-            0.0,
-            self.window_size.1 as f32,
-            0.0,
-            1.0,
-        );
-    }
+    pub fn start_new_batch(&mut self, proj: Projection, texture: u32) {
+        use Projection::*;
 
-    pub fn begin_2d_drawing(&mut self, camera: Camera2D) {
         self.window_size = self.window.size();
-        let view = camera.get_view();
-        let projection = Matrix4::new_orthographic(
-            self.window_size.0 as f32 / -2.0,
-            self.window_size.0 as f32 / 2.0,
-            self.window_size.1 as f32 / -2.0,
-            self.window_size.1 as f32 / 2.0,
-            0.0,
-            1.0,
-        );
-        self.transform = projection * view;
+        let transform = match proj {
+            ProjScreen => Matrix4::new_orthographic(
+                0.0,
+                self.window_size.0 as f32,
+                0.0,
+                self.window_size.1 as f32,
+                0.0,
+                1.0,
+            ),
+            Proj2D(camera) => {
+                let view = camera.get_view();
+                let projection = Matrix4::new_orthographic(
+                    self.window_size.0 as f32 / -2.0,
+                    self.window_size.0 as f32 / 2.0,
+                    self.window_size.1 as f32 / -2.0,
+                    self.window_size.1 as f32 / 2.0,
+                    0.0,
+                    1.0,
+                );
+                projection * view
+            }
+        };
+
+        let start = if self.n_batches == 0 {
+            0
+        } else {
+            let prev_batch_info = self.batch_infos[self.n_batches - 1];
+
+            prev_batch_info.start + prev_batch_info.count
+        };
+
+        let batch_info = BatchInfo::new(start, texture, transform);
+        self.batch_infos[self.n_batches] = batch_info;
+        self.n_batches += 1;
     }
 
     pub fn end_drawing(&mut self) {
@@ -277,40 +375,50 @@ impl Renderer {
             );
             self.gl.bind_vertex_array(Some(self.vao));
 
-            self.gl
-                .bind_buffer(glow::ARRAY_BUFFER, Some(self.positions_vbo));
-            self.gl.buffer_sub_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                0,
-                cast_slice_to_u8(&self.positions),
-            );
+            for i_batch in 0..self.n_batches {
+                let batch_info = self.batch_infos[i_batch];
+                let start = batch_info.start;
+                let count = batch_info.count;
+                let transform = batch_info.transform;
 
-            self.gl
-                .bind_buffer(glow::ARRAY_BUFFER, Some(self.colors_vbo));
-            self.gl.buffer_sub_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                0,
-                cast_slice_to_u8(&self.colors),
-            );
+                self.gl.bind_buffer(
+                    glow::ARRAY_BUFFER,
+                    Some(self.positions_vbo),
+                );
+                self.gl.buffer_sub_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    0,
+                    cast_slice_to_u8(
+                        &self.positions[start * 3..(start + count) * 3],
+                    ),
+                );
 
-            self.gl.uniform_matrix_4_f32_slice(
-                self.gl
-                    .get_uniform_location(self.program, "u_transform")
-                    .as_ref(),
-                false,
-                self.transform.as_slice(),
-            );
+                self.gl.bind_buffer(
+                    glow::ARRAY_BUFFER,
+                    Some(self.colors_vbo),
+                );
+                self.gl.buffer_sub_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    0,
+                    cast_slice_to_u8(
+                        &self.colors[start * 4..(start + count) * 4],
+                    ),
+                );
 
-            self.gl.use_program(Some(self.program));
-            self.gl.draw_arrays(
-                glow::TRIANGLES,
-                0,
-                (self.positions.len() / 3) as i32,
-            );
+                self.gl.uniform_matrix_4_f32_slice(
+                    self.gl
+                        .get_uniform_location(self.program, "u_transform")
+                        .as_ref(),
+                    false,
+                    transform.as_slice(),
+                );
+
+                self.gl.use_program(Some(self.program));
+                self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
+            }
         }
 
-        self.positions.clear();
-        self.colors.clear();
+        self.n_batches = 0;
     }
 
     pub fn swap_window(&self) {
@@ -370,6 +478,58 @@ fn create_program(
     }
 
     program
+}
+
+fn create_texture(
+    gl: &glow::Context,
+    internal_format: i32,
+    width: i32,
+    height: i32,
+    format: u32,
+    ty: u32,
+    pixels: Option<&[u8]>,
+    filter: u32,
+) -> glow::Texture {
+    let tex;
+
+    unsafe {
+        tex = gl.create_texture().unwrap();
+        gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+        gl.tex_image_2d(
+            glow::TEXTURE_2D,
+            0,
+            internal_format,
+            width,
+            height,
+            0,
+            format,
+            ty,
+            pixels,
+        );
+
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_WRAP_S,
+            glow::CLAMP_TO_EDGE as i32,
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_WRAP_T,
+            glow::CLAMP_TO_EDGE as i32,
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MAG_FILTER,
+            filter as i32,
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MIN_FILTER,
+            filter as i32,
+        );
+    }
+
+    tex
 }
 
 fn cast_slice_to_u8<T>(slice: &[T]) -> &[u8] {

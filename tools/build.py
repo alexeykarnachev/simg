@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from pathlib import Path
 import subprocess
+import sys
 
 
 _THIS_DIR = Path(__file__).parent
@@ -10,12 +11,21 @@ _PROJECT_DIR = _THIS_DIR / ".."
 def _parse_args():
     parser = ArgumentParser()
     parser.add_argument(
+        "-r",
+        "--run",
+        action="store_true",
+        default=False,
+        help="If set, run the executable after build (only for non-web)",
+    )
+    parser.add_argument(
+        "-w",
         "--web",
         action="store_true",
         default=False,
         help="If set, build for wasm32 target",
     )
     parser.add_argument(
+        "-e",
         "--example",
         type=str,
         default=None,
@@ -24,8 +34,23 @@ def _parse_args():
     return parser.parse_args()
 
 
-def build(web: bool, example: str):
-    cmd = ["cargo", "build", "--release"]
+def build(run: bool, web: bool, example: str):
+    if run and web:
+        print("ERROR: `run` and `web` can't be set simultaneously", file=sys.stderr)
+        sys.exit(1)
+
+    if run and example is None:
+        print("ERROR: `Pass the `example` name to run the executable", file=sys.stderr)
+        sys.exit(1)
+
+    if run and example == "all":
+        print(
+            "ERROR: Can't `run` if `example` is set to 'all'. Pass a specific example name if you want to run the executable",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cmd = ["cargo", "run" if run else "build", "--release"]
 
     target_args = []
     if web:
@@ -45,4 +70,4 @@ def build(web: bool, example: str):
 
 if __name__ == "__main__":
     args = _parse_args()
-    build(args.web, args.example)
+    build(args.run, args.web, args.example)

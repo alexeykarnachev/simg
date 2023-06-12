@@ -1,10 +1,12 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
+use image::load_from_memory;
 use nalgebra::Vector2;
 use simg::input::*;
 use simg::renderer::camera::*;
 use simg::renderer::color::*;
+use simg::renderer::Projection::*;
 use simg::renderer::*;
 
 pub fn main() {
@@ -14,6 +16,11 @@ pub fn main() {
     let mut input = Input::new(&sdl2);
     let mut renderer =
         Renderer::new(&sdl2, "triangle", width as u32, height as u32);
+
+    let raw_image = include_bytes!("./assets/box.png");
+    let image =
+        load_from_memory(raw_image).expect("Can't decode image bytes");
+    let tex = renderer.load_texture_from_image(image);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 0.5;
@@ -27,7 +34,7 @@ pub fn main() {
 
         renderer.clear_color(WHITE);
 
-        renderer.begin_screen_drawing();
+        renderer.start_new_batch(ProjScreen, 0);
         renderer.draw_triangle(
             Vector2::new(width / 2.0, height),
             Vector2::new(0.0, height / 2.0),
@@ -42,7 +49,7 @@ pub fn main() {
         );
         renderer.end_drawing();
 
-        renderer.begin_2d_drawing(camera);
+        renderer.start_new_batch(Proj2D(camera), 0);
         renderer.draw_triangle(
             Vector2::new(0.0, 0.0),
             Vector2::new(width / 2.0, height / 2.0),
