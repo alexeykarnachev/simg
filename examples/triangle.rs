@@ -67,7 +67,7 @@ pub fn main() {
                 Vector2::new(0.0, 1.0),
                 Vector2::new(1.0, 1.0),
             )),
-            Some(Color::new(0.0, 0.0, 0.25, 1.0)),
+            None,
         );
         renderer.end_drawing();
 

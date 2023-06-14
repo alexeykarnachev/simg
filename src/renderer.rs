@@ -231,6 +231,9 @@ impl Renderer {
         let colors_vbo;
         let use_tex_vbo;
         unsafe {
+            gl.enable(glow::BLEND);
+            gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+
             vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
 
@@ -307,9 +310,9 @@ impl Renderer {
         height: u32,
     ) -> usize {
         let n_components = bytes.len() as u32 / (width * height);
-        let format = match n_components {
-            1 => glow::RED,
-            4 => glow::RGBA,
+        let (format, internal_format) = match n_components {
+            1 => (glow::ALPHA, glow::RGBA),
+            4 => (glow::RGBA, glow::RGBA),
             _ => {
                 panic!(
                     "Can't load texture with {}-components pixel",
@@ -320,7 +323,7 @@ impl Renderer {
 
         let tex = create_texture(
             &self.gl,
-            format as i32,
+            internal_format as i32,
             width as i32,
             height as i32,
             format,
