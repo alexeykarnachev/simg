@@ -18,10 +18,13 @@ pub fn main() {
     let mut renderer =
         Renderer::new(&sdl2, "triangle", width as u32, height as u32);
 
-    let raw_image = include_bytes!("./assets/box.png");
-    let image = load_from_memory_with_format(raw_image, ImageFormat::Png)
-        .expect("Can't decode image bytes");
-    let tex = renderer.load_texture_from_image(image);
+    let image_bytes = include_bytes!("./assets/box.png");
+    let tex = renderer.load_texture_from_image_bytes(image_bytes);
+
+    let font_bytes =
+        include_bytes!("../assets/fonts/quicksand/Quicksand-Regular.otf")
+            .as_slice();
+    let font = renderer.load_font_from_otf_bytes(font_bytes, 32);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 0.5;
@@ -54,7 +57,7 @@ pub fn main() {
         );
         renderer.end_drawing();
 
-        renderer.start_new_batch(Proj2D(camera), Some(tex));
+        renderer.start_new_batch(Proj2D(camera), Some(font));
         renderer.draw_rect(
             Rectangle::from_top_left(
                 Vector2::new(0.0, 0.0),
@@ -64,7 +67,7 @@ pub fn main() {
                 Vector2::new(0.0, 1.0),
                 Vector2::new(1.0, 1.0),
             )),
-            None,
+            Some(Color::new(0.0, 0.0, 0.25, 1.0)),
         );
         renderer.end_drawing();
 

@@ -8,12 +8,8 @@ pub struct Triangle {
 }
 
 impl Triangle {
-    pub fn new(
-        a: Vector2<f32>,
-        b: Vector2<f32>,
-        c: Vector2<f32>,
-    ) -> Self {
-        Self {a, b, c}
+    pub fn new(a: Vector2<f32>, b: Vector2<f32>, c: Vector2<f32>) -> Self {
+        Self { a, b, c }
     }
 
     pub fn to_vertices(&self) -> [Vector2<f32>; 3] {

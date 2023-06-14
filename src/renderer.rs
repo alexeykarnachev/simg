@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use crate::font::*;
 use crate::shapes::*;
+use fontdue::Font;
+use image::{load_from_memory_with_format, ImageFormat};
 use image::{DynamicImage, EncodableLayout};
 use nalgebra::{Matrix4, Vector2};
 use std::{mem::size_of, num::NonZeroU32};
@@ -216,7 +219,7 @@ impl Renderer {
             })
         };
 
-        // video.gl_set_swap_interval(1).unwrap();
+        video.gl_set_swap_interval(1).unwrap();
 
         // ---------------------------------------------------------------
         let program =
@@ -297,19 +300,32 @@ impl Renderer {
         }
     }
 
-    pub fn load_texture_from_image(
+    pub fn load_texture_from_pixel_bytes(
         &mut self,
-        image: DynamicImage,
+        bytes: &[u8],
+        width: u32,
+        height: u32,
     ) -> usize {
-        let image = image.into_rgba8();
+        let n_components = bytes.len() as u32 / (width * height);
+        let format = match n_components {
+            1 => glow::RED,
+            4 => glow::RGBA,
+            _ => {
+                panic!(
+                    "Can't load texture with {}-components pixel",
+                    n_components
+                )
+            }
+        };
+
         let tex = create_texture(
             &self.gl,
-            glow::RGBA as i32,
-            image.width() as i32,
-            image.height() as i32,
-            glow::RGBA,
+            format as i32,
+            width as i32,
+            height as i32,
+            format,
             glow::UNSIGNED_BYTE,
-            Some(&image.as_bytes()),
+            Some(bytes),
             glow::LINEAR,
         );
 
@@ -317,7 +333,39 @@ impl Renderer {
         self.textures[idx] = tex.0.get();
         self.n_textures += 1;
 
-        return idx;
+        idx
+    }
+
+    pub fn load_texture_from_image_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> usize {
+        let image = load_from_memory_with_format(bytes, ImageFormat::Png)
+            .expect("Can't decode image bytes")
+            .into_rgba8();
+
+        self.load_texture_from_pixel_bytes(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+        )
+    }
+
+    pub fn load_font_from_otf_bytes(
+        &mut self,
+        bytes: &[u8],
+        font_size: u32,
+    ) -> usize {
+        let font =
+            Font::from_bytes(bytes, fontdue::FontSettings::default())
+                .unwrap();
+        let atlas = GlyphAtlas::new(font, font_size);
+
+        self.load_texture_from_pixel_bytes(
+            &atlas.image,
+            atlas.width,
+            atlas.height,
+        )
     }
 
     pub fn clear_color(&self, color: Color) {
@@ -460,52 +508,25 @@ impl Renderer {
                 let transform = batch_info.transform;
                 let texture = batch_info.texture;
 
-                self.gl.bind_buffer(
-                    glow::ARRAY_BUFFER,
-                    Some(self.positions_vbo),
+                buffer_sub_data(
+                    &self.gl,
+                    self.positions_vbo,
+                    &self.positions[start * 3..(start + count) * 3],
                 );
-                self.gl.buffer_sub_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    0,
-                    cast_slice_to_u8(
-                        &self.positions[start * 3..(start + count) * 3],
-                    ),
+                buffer_sub_data(
+                    &self.gl,
+                    self.texcoords_vbo,
+                    &self.texcoords[start * 2..(start + count) * 2],
                 );
-
-                self.gl.bind_buffer(
-                    glow::ARRAY_BUFFER,
-                    Some(self.texcoords_vbo),
+                buffer_sub_data(
+                    &self.gl,
+                    self.colors_vbo,
+                    &self.colors[start * 4..(start + count) * 4],
                 );
-                self.gl.buffer_sub_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    0,
-                    cast_slice_to_u8(
-                        &self.texcoords[start * 2..(start + count) * 2],
-                    ),
-                );
-
-                self.gl.bind_buffer(
-                    glow::ARRAY_BUFFER,
-                    Some(self.colors_vbo),
-                );
-                self.gl.buffer_sub_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    0,
-                    cast_slice_to_u8(
-                        &self.colors[start * 4..(start + count) * 4],
-                    ),
-                );
-
-                self.gl.bind_buffer(
-                    glow::ARRAY_BUFFER,
-                    Some(self.use_tex_vbo),
-                );
-                self.gl.buffer_sub_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    0,
-                    cast_slice_to_u8(
-                        &self.use_tex[start * 1..(start + count) * 1],
-                    ),
+                buffer_sub_data(
+                    &self.gl,
+                    self.use_tex_vbo,
+                    &self.use_tex[start * 1..(start + count) * 1],
                 );
 
                 self.gl.uniform_matrix_4_f32_slice(
@@ -649,6 +670,21 @@ fn create_texture(
     }
 
     tex
+}
+
+fn buffer_sub_data<T>(
+    gl: &glow::Context,
+    vbo: glow::NativeBuffer,
+    data: &[T],
+) {
+    unsafe {
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+        gl.buffer_sub_data_u8_slice(
+            glow::ARRAY_BUFFER,
+            0,
+            cast_slice_to_u8(data),
+        );
+    }
 }
 
 fn cast_slice_to_u8<T>(slice: &[T]) -> &[u8] {
