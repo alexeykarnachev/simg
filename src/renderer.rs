@@ -384,13 +384,13 @@ impl Renderer {
 
     pub fn draw_rect(
         &mut self,
-        rect: Rect,
-        texcoords: Option<Rect>,
+        rect: Rectangle,
+        texcoords: Option<Rectangle>,
         color: Option<Color>,
     ) {
         let positions = rect.to_triangles();
         let texcoords = if let Some(texcoords) = texcoords {
-            texcoords.to_some_triangles()
+            texcoords.to_triangles().map(|t| Some(t))
         } else {
             [None, None]
         };

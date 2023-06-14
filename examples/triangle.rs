@@ -56,11 +56,11 @@ pub fn main() {
 
         renderer.start_new_batch(Proj2D(camera), Some(tex));
         renderer.draw_rect(
-            Rect::from_top_left(
+            Rectangle::from_top_left(
                 Vector2::new(0.0, 0.0),
                 Vector2::new(width / 2.0, height / 2.0),
             ),
-            Some(Rect::from_top_left(
+            Some(Rectangle::from_top_left(
                 Vector2::new(0.0, 1.0),
                 Vector2::new(1.0, 1.0),
             )),

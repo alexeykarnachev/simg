@@ -1,57 +1,59 @@
 use nalgebra::Vector2;
 
-type Vertex = Vector2<f32>;
-
 #[derive(Clone, Copy)]
 pub struct Triangle {
-    pub a: Vertex,
-    pub b: Vertex,
-    pub c: Vertex,
+    pub a: Vector2<f32>,
+    pub b: Vector2<f32>,
+    pub c: Vector2<f32>,
 }
 
 impl Triangle {
-    pub fn new(a: Vertex, b: Vertex, c: Vertex) -> Self {
-        Self { a, b, c }
+    pub fn new(
+        a: Vector2<f32>,
+        b: Vector2<f32>,
+        c: Vector2<f32>,
+    ) -> Self {
+        Self {a, b, c}
+    }
+
+    pub fn to_vertices(&self) -> [Vector2<f32>; 3] {
+        [self.a, self.b, self.c]
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct Rect {
-    bot_left: Vertex,
-    top_right: Vertex,
+pub struct Rectangle {
+    bot_left: Vector2<f32>,
+    top_right: Vector2<f32>,
 }
 
-impl Rect {
-    pub fn new(bot_left: Vertex, top_right: Vertex) -> Self {
-        Self {
-            bot_left,
-            top_right,
-        }
-    }
-
-    pub fn get_bot_left(&self) -> Vertex {
+impl Rectangle {
+    pub fn get_bot_left(&self) -> Vector2<f32> {
         self.bot_left
     }
 
-    pub fn get_top_right(&self) -> Vertex {
+    pub fn get_top_right(&self) -> Vector2<f32> {
         self.top_right
     }
 
-    pub fn get_bot_right(&self) -> Vertex {
+    pub fn get_bot_right(&self) -> Vector2<f32> {
         let mut bot_right = self.bot_left;
         bot_right.x = self.top_right.x;
 
         bot_right
     }
 
-    pub fn get_top_left(&self) -> Vertex {
+    pub fn get_top_left(&self) -> Vector2<f32> {
         let mut top_left = self.bot_left;
         top_left.y = self.top_right.y;
 
         top_left
     }
 
-    pub fn from_top_left(top_left: Vertex, size: Vertex) -> Self {
+    pub fn from_top_left(
+        top_left: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
         let mut bot_left = top_left;
         bot_left.y -= size.y;
 
@@ -77,11 +79,5 @@ impl Rect {
                 self.get_bot_right(),
             ),
         ]
-    }
-
-    pub fn to_some_triangles(&self) -> [Option<Triangle>; 2] {
-        let triangles = self.to_triangles();
-
-        [Some(triangles[0]), Some(triangles[1])]
     }
 }
