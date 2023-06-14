@@ -1,9 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use image::DynamicImage;
+use crate::shapes::*;
+use image::{DynamicImage, EncodableLayout};
 use nalgebra::{Matrix4, Vector2};
-use std::mem::size_of;
+use std::{mem::size_of, num::NonZeroU32};
 
 use camera::*;
 use color::*;
@@ -99,31 +100,11 @@ pub mod camera {
     }
 }
 
-pub struct Renderer {
-    window: sdl2::video::Window,
-    window_size: (u32, u32),
-    gl: glow::Context,
-    program: glow::NativeProgram,
-
-    vao: glow::NativeVertexArray,
-    positions_vbo: glow::NativeBuffer,
-    colors_vbo: glow::NativeBuffer,
-
-    n_textures: usize,
-    textures: [u32; MAX_N_TEXTURES],
-
-    positions: [f32; MAX_N_VERTICES * 3],
-    colors: [f32; MAX_N_VERTICES * 4],
-
-    n_batches: usize,
-    batch_infos: [BatchInfo; MAX_N_BATCHES],
-}
-
 #[derive(Clone, Copy)]
 struct BatchInfo {
     start: usize,
     count: usize,
-    texture: u32,
+    texture: Option<usize>,
     transform: Matrix4<f32>,
 }
 
@@ -135,7 +116,7 @@ pub enum Projection {
 impl BatchInfo {
     pub fn new(
         start: usize,
-        texture: u32,
+        texture: Option<usize>,
         transform: Matrix4<f32>,
     ) -> Self {
         Self {
@@ -152,10 +133,34 @@ impl Default for BatchInfo {
         Self {
             start: 0,
             count: 0,
-            texture: 0,
+            texture: None,
             transform: Matrix4::identity(),
         }
     }
+}
+
+pub struct Renderer {
+    window: sdl2::video::Window,
+    window_size: (u32, u32),
+    gl: glow::Context,
+    program: glow::NativeProgram,
+
+    vao: glow::NativeVertexArray,
+    positions_vbo: glow::NativeBuffer,
+    texcoords_vbo: glow::NativeBuffer,
+    colors_vbo: glow::NativeBuffer,
+    use_tex_vbo: glow::NativeBuffer,
+
+    n_textures: usize,
+    textures: [u32; MAX_N_TEXTURES],
+
+    positions: [f32; MAX_N_VERTICES * 3],
+    texcoords: [f32; MAX_N_TEXTURES * 2],
+    colors: [f32; MAX_N_VERTICES * 4],
+    use_tex: [u32; MAX_N_VERTICES],
+
+    n_batches: usize,
+    batch_infos: [BatchInfo; MAX_N_BATCHES],
 }
 
 impl Renderer {
@@ -219,7 +224,9 @@ impl Renderer {
 
         let vao;
         let positions_vbo;
+        let texcoords_vbo;
         let colors_vbo;
+        let use_tex_vbo;
         unsafe {
             vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
@@ -234,6 +241,16 @@ impl Renderer {
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
 
+            texcoords_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(texcoords_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<f32>() * 2 * MAX_N_VERTICES) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(1);
+            gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 0, 0);
+
             colors_vbo = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(colors_vbo));
             gl.buffer_data_size(
@@ -241,8 +258,18 @@ impl Renderer {
                 (size_of::<f32>() * 4 * MAX_N_VERTICES) as i32,
                 glow::DYNAMIC_DRAW,
             );
-            gl.enable_vertex_attrib_array(1);
-            gl.vertex_attrib_pointer_f32(1, 4, glow::FLOAT, false, 0, 0);
+            gl.enable_vertex_attrib_array(2);
+            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
+
+            use_tex_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(use_tex_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<u32>() * 1 * MAX_N_VERTICES) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(3);
+            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_INT, 0, 0);
         }
 
         Self {
@@ -253,13 +280,17 @@ impl Renderer {
 
             vao,
             positions_vbo,
+            texcoords_vbo,
             colors_vbo,
+            use_tex_vbo,
 
             n_textures: 0,
             textures: [0; MAX_N_TEXTURES],
 
             positions: [0.0; MAX_N_VERTICES * 3],
+            texcoords: [0.0; MAX_N_TEXTURES * 2],
             colors: [0.0; MAX_N_VERTICES * 4],
+            use_tex: [0; MAX_N_VERTICES],
 
             n_batches: 0,
             batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
@@ -270,6 +301,7 @@ impl Renderer {
         &mut self,
         image: DynamicImage,
     ) -> usize {
+        let image = image.into_rgba8();
         let tex = create_texture(
             &self.gl,
             glow::RGBA as i32,
@@ -295,7 +327,12 @@ impl Renderer {
         }
     }
 
-    fn draw_vertex_2d(&mut self, position: Vector2<f32>, color: Color) {
+    fn draw_vertex(
+        &mut self,
+        position: Vector2<f32>,
+        texcoord: Option<Vector2<f32>>,
+        color: Option<Color>,
+    ) {
         if self.n_batches == 0 {
             panic!("You should start a new batch before drawing!")
         }
@@ -305,27 +342,68 @@ impl Renderer {
         self.positions[idx * 3 + 1] = position.y;
         self.positions[idx * 3 + 2] = 0.0;
 
-        self.colors[idx * 4 + 0] = color.r;
-        self.colors[idx * 4 + 1] = color.g;
-        self.colors[idx * 4 + 2] = color.b;
-        self.colors[idx * 4 + 3] = color.a;
+        if let Some(color) = color {
+            self.colors[idx * 4 + 0] = color.r;
+            self.colors[idx * 4 + 1] = color.g;
+            self.colors[idx * 4 + 2] = color.b;
+            self.colors[idx * 4 + 3] = color.a;
+        } else {
+            self.colors[idx * 4 + 0] = 0.0;
+            self.colors[idx * 4 + 1] = 0.0;
+            self.colors[idx * 4 + 2] = 0.0;
+            self.colors[idx * 4 + 3] = 0.0;
+        }
+
+        if let Some(texcoord) = texcoord {
+            self.texcoords[idx * 2 + 0] = texcoord.x;
+            self.texcoords[idx * 2 + 1] = texcoord.y;
+            self.use_tex[idx] = 1;
+        } else {
+            self.use_tex[idx] = 0;
+        }
 
         batch_info.count += 1;
     }
 
     pub fn draw_triangle(
         &mut self,
-        a: Vector2<f32>,
-        b: Vector2<f32>,
-        c: Vector2<f32>,
-        color: Color,
+        triangle: Triangle,
+        texcoords: Option<Triangle>,
+        color: Option<Color>,
     ) {
-        self.draw_vertex_2d(a, color);
-        self.draw_vertex_2d(b, color);
-        self.draw_vertex_2d(c, color);
+        if let Some(texcoords) = texcoords {
+            self.draw_vertex(triangle.a, Some(texcoords.a), color);
+            self.draw_vertex(triangle.b, Some(texcoords.b), color);
+            self.draw_vertex(triangle.c, Some(texcoords.c), color);
+        } else {
+            self.draw_vertex(triangle.a, None, color);
+            self.draw_vertex(triangle.b, None, color);
+            self.draw_vertex(triangle.c, None, color);
+        }
     }
 
-    pub fn start_new_batch(&mut self, proj: Projection, texture: u32) {
+    pub fn draw_rect(
+        &mut self,
+        rect: Rect,
+        texcoords: Option<Rect>,
+        color: Option<Color>,
+    ) {
+        let positions = rect.to_triangles();
+        let texcoords = if let Some(texcoords) = texcoords {
+            texcoords.to_some_triangles()
+        } else {
+            [None, None]
+        };
+
+        self.draw_triangle(positions[0], texcoords[0], color);
+        self.draw_triangle(positions[1], texcoords[1], color);
+    }
+
+    pub fn start_new_batch(
+        &mut self,
+        proj: Projection,
+        texture: Option<usize>,
+    ) {
         use Projection::*;
 
         self.window_size = self.window.size();
@@ -380,6 +458,7 @@ impl Renderer {
                 let start = batch_info.start;
                 let count = batch_info.count;
                 let transform = batch_info.transform;
+                let texture = batch_info.texture;
 
                 self.gl.bind_buffer(
                     glow::ARRAY_BUFFER,
@@ -395,6 +474,18 @@ impl Renderer {
 
                 self.gl.bind_buffer(
                     glow::ARRAY_BUFFER,
+                    Some(self.texcoords_vbo),
+                );
+                self.gl.buffer_sub_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    0,
+                    cast_slice_to_u8(
+                        &self.texcoords[start * 2..(start + count) * 2],
+                    ),
+                );
+
+                self.gl.bind_buffer(
+                    glow::ARRAY_BUFFER,
                     Some(self.colors_vbo),
                 );
                 self.gl.buffer_sub_data_u8_slice(
@@ -405,6 +496,18 @@ impl Renderer {
                     ),
                 );
 
+                self.gl.bind_buffer(
+                    glow::ARRAY_BUFFER,
+                    Some(self.use_tex_vbo),
+                );
+                self.gl.buffer_sub_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    0,
+                    cast_slice_to_u8(
+                        &self.use_tex[start * 1..(start + count) * 1],
+                    ),
+                );
+
                 self.gl.uniform_matrix_4_f32_slice(
                     self.gl
                         .get_uniform_location(self.program, "u_transform")
@@ -412,6 +515,22 @@ impl Renderer {
                     false,
                     transform.as_slice(),
                 );
+
+                if let Some(tex) = texture {
+                    let tex = self.textures[tex];
+                    self.gl.bind_texture(
+                        0,
+                        Some(glow::NativeTexture(
+                            NonZeroU32::new(tex).unwrap(),
+                        )),
+                    );
+                    self.gl.uniform_1_i32(
+                        self.gl
+                            .get_uniform_location(self.program, "u_tex")
+                            .as_ref(),
+                        0,
+                    );
+                }
 
                 self.gl.use_program(Some(self.program));
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
