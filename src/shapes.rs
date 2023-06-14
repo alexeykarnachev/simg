@@ -17,7 +17,7 @@ impl Triangle {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Rectangle {
     bot_left: Vector2<f32>,
     top_right: Vector2<f32>,
@@ -53,9 +53,19 @@ impl Rectangle {
         let mut bot_left = top_left;
         bot_left.y -= size.y;
 
-        let mut top_right = top_left;
-        top_right.x += size.x;
+        let top_right = bot_left + size;
 
+        Self {
+            bot_left,
+            top_right,
+        }
+    }
+
+    pub fn from_bot_left(
+        bot_left: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let top_right = bot_left + size;
         Self {
             bot_left,
             top_right,

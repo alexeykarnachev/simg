@@ -1,7 +1,6 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
-use image::{load_from_memory_with_format, ImageFormat};
 use nalgebra::Vector2;
 use simg::input::*;
 use simg::renderer::camera::*;
@@ -24,15 +23,17 @@ pub fn main() {
     let font_bytes =
         include_bytes!("../assets/fonts/quicksand/Quicksand-Regular.otf")
             .as_slice();
-    let font = renderer.load_font_from_otf_bytes(font_bytes, 32);
+    // let font = renderer.load_font_from_otf_bytes(font_bytes, 32);
+    let font = tex;
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 0.5;
     camera.position.x += width * 0.5;
 
     let mut update = move || {
+        println!("---");
         input.update();
-        camera.rotation += 0.01;
+        camera.rotation += 0.001;
 
         renderer.clear_color(WHITE);
 
@@ -69,6 +70,11 @@ pub fn main() {
             )),
             None,
         );
+        // renderer.draw_text(
+        //     "ABC abc ZALOOPA!!!-- ~~ XYI WWW___===CC!!!1232  WW",
+        //     Vector2::new(width / 2.0, height / 2.0),
+        //     None,
+        // );
         renderer.end_drawing();
 
         renderer.swap_window();

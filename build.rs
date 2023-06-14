@@ -12,7 +12,7 @@ fn main() {
                 -s FULL_ES3 \
                 -s MIN_WEBGL_VERSION=2 \
                 -s MAX_WEBGL_VERSION=2 \
-                -s STACK_SIZE=1048576"
+                -s STACK_SIZE=10485760"
             );
         }
         _ => {}

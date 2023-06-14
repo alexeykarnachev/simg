@@ -15,7 +15,7 @@ use glow::{HasContext, NativeTexture};
 
 const PRIMITIVE_VERT_SRC: &str = include_str!("../shaders/primitive.vert");
 const PRIMITIVE_FRAG_SRC: &str = include_str!("../shaders/primitive.frag");
-const MAX_N_VERTICES: usize = 1 << 10;
+const MAX_N_VERTICES: usize = 1 << 15;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
 
@@ -38,6 +38,18 @@ pub mod color {
         }
     }
 
+    pub const BLACK: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const GRAY: Color = Color {
+        r: 0.5,
+        g: 0.5,
+        b: 0.5,
+        a: 1.0,
+    };
     pub const WHITE: Color = Color {
         r: 1.0,
         g: 1.0,
@@ -107,7 +119,7 @@ pub mod camera {
 struct BatchInfo {
     start: usize,
     count: usize,
-    texture: Option<usize>,
+    tex_idx: Option<usize>,
     transform: Matrix4<f32>,
 }
 
@@ -119,13 +131,13 @@ pub enum Projection {
 impl BatchInfo {
     pub fn new(
         start: usize,
-        texture: Option<usize>,
+        tex_idx: Option<usize>,
         transform: Matrix4<f32>,
     ) -> Self {
         Self {
             start,
             count: 0,
-            texture,
+            tex_idx,
             transform,
         }
     }
@@ -136,7 +148,7 @@ impl Default for BatchInfo {
         Self {
             start: 0,
             count: 0,
-            texture: None,
+            tex_idx: None,
             transform: Matrix4::identity(),
         }
     }
@@ -156,9 +168,10 @@ pub struct Renderer {
 
     n_textures: usize,
     textures: [u32; MAX_N_TEXTURES],
+    glyph_atlases: [Option<GlyphAtlas>; MAX_N_TEXTURES],
 
     positions: [f32; MAX_N_VERTICES * 3],
-    texcoords: [f32; MAX_N_TEXTURES * 2],
+    texcoords: [f32; MAX_N_VERTICES * 2],
     colors: [f32; MAX_N_VERTICES * 4],
     use_tex: [u32; MAX_N_VERTICES],
 
@@ -292,9 +305,10 @@ impl Renderer {
 
             n_textures: 0,
             textures: [0; MAX_N_TEXTURES],
+            glyph_atlases: [(); MAX_N_TEXTURES].map(|_| None),
 
             positions: [0.0; MAX_N_VERTICES * 3],
-            texcoords: [0.0; MAX_N_TEXTURES * 2],
+            texcoords: [0.0; MAX_N_VERTICES * 2],
             colors: [0.0; MAX_N_VERTICES * 4],
             use_tex: [0; MAX_N_VERTICES],
 
@@ -332,6 +346,10 @@ impl Renderer {
             glow::LINEAR,
         );
 
+        if self.n_textures == MAX_N_TEXTURES {
+            panic!("Can't create more than {} texture", MAX_N_TEXTURES);
+        }
+
         let idx = self.n_textures;
         self.textures[idx] = tex.0.get();
         self.n_textures += 1;
@@ -364,11 +382,15 @@ impl Renderer {
                 .unwrap();
         let atlas = GlyphAtlas::new(font, font_size);
 
-        self.load_texture_from_pixel_bytes(
+        let idx = self.load_texture_from_pixel_bytes(
             &atlas.image,
             atlas.width,
             atlas.height,
-        )
+        );
+
+        self.glyph_atlases[idx] = Some(atlas);
+
+        idx
     }
 
     pub fn clear_color(&self, color: Color) {
@@ -384,10 +406,10 @@ impl Renderer {
         texcoord: Option<Vector2<f32>>,
         color: Option<Color>,
     ) {
-        if self.n_batches == 0 {
-            panic!("You should start a new batch before drawing!")
-        }
-        let batch_info = &mut self.batch_infos[self.n_batches - 1];
+        let batch_info = &mut self
+            .batch_infos
+            .get_mut(self.n_batches - 1)
+            .expect("You should start a new batch before drawing");
         let idx = batch_info.start + batch_info.count;
         self.positions[idx * 3 + 0] = position.x;
         self.positions[idx * 3 + 1] = position.y;
@@ -450,6 +472,53 @@ impl Renderer {
         self.draw_triangle(positions[1], texcoords[1], color);
     }
 
+    pub fn draw_text(
+        &mut self,
+        text: &str,
+        position: Vector2<f32>,
+        color: Option<Color>,
+    ) {
+        let batch_info = &mut self
+            .batch_infos
+            .get(self.n_batches - 1)
+            .expect("You should start a new batch before drawing");
+        let tex_idx = batch_info.tex_idx.expect("Batch should have a texture attached. Call `start_new_batch` and set a font texture");
+        let atlas = self.glyph_atlases[tex_idx].as_ref().expect("Font texture should have corresponding glyph atlas. Looks like you are trying to draw a text with non-font texture");
+
+        let mut cursor = position;
+        let mut rects = vec![];
+        for (_, c) in text.char_indices() {
+            let glyph = atlas.get_glyph(c);
+            let width = glyph.metrics.width as f32;
+            let height = glyph.metrics.height as f32;
+            let size = Vector2::new(width, height);
+            let offset = Vector2::new(
+                glyph.metrics.xmin as f32,
+                glyph.metrics.ymin as f32,
+            );
+
+            let rect = Rectangle::from_bot_left(cursor + offset, size);
+            let texcoords = Rectangle::from_top_left(
+                Vector2::new(
+                    glyph.x / atlas.width as f32,
+                    glyph.y / atlas.height as f32,
+                ),
+                Vector2::new(
+                    size.x / atlas.width as f32,
+                    size.y / atlas.height as f32,
+                ),
+            );
+
+            cursor.x += glyph.metrics.advance_width;
+            cursor.y += glyph.metrics.advance_height;
+            rects.push((rect, texcoords));
+        }
+
+        for (rect, texcoords) in rects {
+            self.draw_rect(rect, Some(texcoords), color);
+        }
+    }
+
     pub fn start_new_batch(
         &mut self,
         proj: Projection,
@@ -509,7 +578,7 @@ impl Renderer {
                 let start = batch_info.start;
                 let count = batch_info.count;
                 let transform = batch_info.transform;
-                let texture = batch_info.texture;
+                let tex_idx = batch_info.tex_idx;
 
                 buffer_sub_data(
                     &self.gl,
@@ -540,7 +609,7 @@ impl Renderer {
                     transform.as_slice(),
                 );
 
-                if let Some(tex) = texture {
+                if let Some(tex) = tex_idx {
                     let tex = self.textures[tex];
                     self.gl.bind_texture(
                         0,

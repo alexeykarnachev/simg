@@ -9,7 +9,6 @@ pub struct Glyph {
 }
 
 pub struct GlyphAtlas {
-    pub font: Font,
     pub image: Vec<u8>,
     pub width: u32,
     pub height: u32,
@@ -81,7 +80,6 @@ impl GlyphAtlas {
         }
 
         Self {
-            font,
             image: flipped_image,
             width: image_width as u32,
             height: image_height as u32,
