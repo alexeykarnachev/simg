@@ -3,7 +3,6 @@
 
 use crate::font::*;
 use crate::shapes::*;
-use fontdue::Font;
 use image::{load_from_memory_with_format, ImageFormat};
 use image::{DynamicImage, EncodableLayout};
 use nalgebra::{Matrix4, Vector2};
@@ -167,7 +166,6 @@ pub struct Renderer {
 
     n_textures: usize,
     textures: [u32; MAX_N_TEXTURES],
-    glyph_atlases: [Option<GlyphAtlas>; MAX_N_TEXTURES],
 
     positions: [f32; MAX_N_VERTICES * 3],
     texcoords: [f32; MAX_N_VERTICES * 2],
@@ -291,7 +289,6 @@ impl Renderer {
 
             n_textures: 0,
             textures: [0; MAX_N_TEXTURES],
-            glyph_atlases: [(); MAX_N_TEXTURES].map(|_| None),
 
             positions: [0.0; MAX_N_VERTICES * 3],
             texcoords: [0.0; MAX_N_VERTICES * 2],
@@ -371,25 +368,12 @@ impl Renderer {
         )
     }
 
-    pub fn load_font_from_otf_bytes(
-        &mut self,
-        bytes: &[u8],
-        font_size: u32,
-    ) -> usize {
-        let font =
-            Font::from_bytes(bytes, fontdue::FontSettings::default())
-                .unwrap();
-        let atlas = GlyphAtlas::new(font, font_size);
-
-        let idx = self.load_texture_from_pixel_bytes(
-            &atlas.image,
-            atlas.width,
-            atlas.height,
-        );
-
-        self.glyph_atlases[idx] = Some(atlas);
-
-        idx
+    pub fn load_texture_from_font(&mut self, font: &Font) -> usize {
+        self.load_texture_from_pixel_bytes(
+            &font.pixels,
+            font.width,
+            font.height,
+        )
     }
 
     pub fn clear_color(&self, color: Color) {
@@ -468,51 +452,8 @@ impl Renderer {
         self.draw_triangle(positions[1], texcoords[1], color);
     }
 
-    pub fn draw_text(
-        &mut self,
-        text: &str,
-        position: Vector2<f32>,
-        color: Option<Color>,
-    ) {
-        let batch_info = &mut self
-            .batch_infos
-            .get(self.n_batches - 1)
-            .expect("You should start a new batch before drawing");
-        let tex_idx = batch_info.tex_idx.expect("Batch should have a texture attached. Call `start_new_batch` and set a font texture");
-        let atlas = self.glyph_atlases[tex_idx].as_ref().expect("Font texture should have corresponding glyph atlas. Looks like you are trying to draw a text with non-font texture");
-
-        let mut cursor = position;
-        let mut rects = vec![];
-        for (_, c) in text.char_indices() {
-            let glyph = atlas.get_glyph(c);
-            let width = glyph.metrics.width as f32;
-            let height = glyph.metrics.height as f32;
-            let size = Vector2::new(width, height);
-            let offset = Vector2::new(
-                glyph.metrics.xmin as f32,
-                glyph.metrics.ymin as f32,
-            );
-
-            let rect = Rectangle::from_bot_left(cursor + offset, size);
-            let texcoords = Rectangle::from_top_left(
-                Vector2::new(
-                    glyph.x / atlas.width as f32,
-                    glyph.y / atlas.height as f32,
-                ),
-                Vector2::new(
-                    size.x / atlas.width as f32,
-                    size.y / atlas.height as f32,
-                ),
-            );
-
-            cursor.x += glyph.metrics.advance_width;
-            cursor.y += glyph.metrics.advance_height;
-            rects.push((rect, texcoords));
-        }
-
-        for (rect, texcoords) in rects {
-            self.draw_rect(rect, Some(texcoords), color);
-        }
+    pub fn draw_glyph(&mut self, glyph: Glyph, color: Option<Color>) {
+        self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
 
     pub fn start_new_batch(

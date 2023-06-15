@@ -1,22 +1,30 @@
-use fontdue::Font;
-use fontdue::Metrics;
+use std::ops::AddAssign;
+
+use crate::shapes::Rectangle;
+use fontdue;
+use nalgebra::Vector2;
 
 #[derive(Copy, Clone)]
 pub struct Glyph {
-    pub x: f32,
-    pub y: f32,
-    pub metrics: Metrics,
+    pub rect: Rectangle,
+    pub texcoords: Rectangle,
+    pub advance: Vector2<f32>,
 }
 
-pub struct GlyphAtlas {
-    pub image: Vec<u8>,
+pub struct Font {
+    pub pixels: Vec<u8>,
     pub width: u32,
     pub height: u32,
-    pub glyphs: Vec<Glyph>,
+    glyphs: Vec<Glyph>,
 }
 
-impl GlyphAtlas {
-    pub fn new(font: Font, font_size: u32) -> Self {
+impl Font {
+    pub fn new(font_bytes: &[u8], font_size: u32) -> Self {
+        let font = fontdue::Font::from_bytes(
+            font_bytes,
+            fontdue::FontSettings::default(),
+        )
+        .unwrap();
         let mut glyphs = vec![];
 
         let mut metrics = Vec::new();
@@ -48,10 +56,28 @@ impl GlyphAtlas {
             let ir = (i_glyph / n_glyphs_per_row) * max_glyph_height;
             let ic = (i_glyph % n_glyphs_per_row) * max_glyph_width;
             let metric = &metrics[i_glyph];
+            let texcoords = Rectangle::from_top_left(
+                Vector2::new(
+                    ic as f32 / image_width as f32,
+                    (image_height - ir) as f32 / image_height as f32,
+                ),
+                Vector2::new(
+                    metric.width as f32 / image_width as f32,
+                    metric.height as f32 / image_height as f32,
+                ),
+            );
+            let offset =
+                Vector2::new(metric.xmin as f32, metric.ymin as f32);
+            let size =
+                Vector2::new(metric.width as f32, metric.height as f32);
+            let advance =
+                Vector2::new(metric.advance_width, metric.advance_height);
+            let rect = Rectangle::from_bot_left(offset, size);
+
             let glyph = Glyph {
-                x: ic as f32,
-                y: (image_height - ir) as f32,
-                metrics: *metric,
+                texcoords,
+                rect,
+                advance,
             };
             glyphs.push(glyph);
 
@@ -81,19 +107,31 @@ impl GlyphAtlas {
         }
 
         Self {
-            image: flipped_image,
+            pixels: flipped_image,
             width: image_width as u32,
             height: image_height as u32,
             glyphs,
         }
     }
 
-    pub fn get_glyph(&self, c: char) -> Glyph {
-        let mut idx = c as usize;
+    fn get_glyph(&self, symbol: char) -> Glyph {
+        let mut idx = symbol as usize;
         if idx < 32 || idx > 126 {
             idx = 63; // Question mark
         }
 
         self.glyphs[idx - 32]
+    }
+
+    pub fn advance_glyph(
+        &self,
+        cursor: &mut Vector2<f32>,
+        symbol: char,
+    ) -> Glyph {
+        let mut glyph = self.get_glyph(symbol);
+        glyph.rect.translate_assign(cursor);
+        cursor.add_assign(glyph.advance);
+
+        glyph
     }
 }

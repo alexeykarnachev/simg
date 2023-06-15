@@ -1,3 +1,5 @@
+use std::ops::AddAssign;
+
 use nalgebra::Vector2;
 
 #[derive(Clone, Copy)]
@@ -24,6 +26,11 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
+    pub fn translate_assign(&mut self, translation: &Vector2<f32>) {
+        self.bot_left.add_assign(translation);
+        self.top_right.add_assign(translation);
+    }
+
     pub fn get_bot_left(&self) -> Vector2<f32> {
         self.bot_left
     }

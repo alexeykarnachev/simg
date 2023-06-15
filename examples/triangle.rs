@@ -3,6 +3,7 @@
 
 use nalgebra::Vector2;
 use sdl2::keyboard::{Keycode, Scancode};
+use simg::font::*;
 use simg::input::*;
 use simg::renderer::camera::*;
 use simg::renderer::color::*;
@@ -25,7 +26,9 @@ pub fn main() {
         "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
     )
     .as_slice();
-    let font = renderer.load_font_from_otf_bytes(font_bytes, 52);
+    let font_size = 52;
+    let font = Font::new(font_bytes, font_size);
+    let font_tex = renderer.load_texture_from_font(&font);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 0.5;
@@ -50,7 +53,7 @@ pub fn main() {
             camera.rotation += 0.001;
         }
 
-        renderer.clear_color(WHITE);
+        renderer.clear_color(Color::new(0.1, 0.2, 0.3, 1.0));
 
         renderer.start_new_batch(ProjScreen, None);
         renderer.draw_triangle(
@@ -60,7 +63,7 @@ pub fn main() {
                 Vector2::new(width, height / 2.0),
             ),
             None,
-            Some(GREEN),
+            Some(BLACK),
         );
         renderer.draw_triangle(
             Triangle::new(
@@ -69,7 +72,7 @@ pub fn main() {
                 Vector2::new(0.0, height / 2.0),
             ),
             None,
-            Some(RED),
+            Some(GRAY),
         );
 
         renderer.start_new_batch(Proj2D(camera), Some(tex));
@@ -85,11 +88,21 @@ pub fn main() {
             None,
         );
 
-        renderer.start_new_batch(Proj2D(camera), Some(font));
-        renderer.draw_text(
-            &text,
-            Vector2::new(width / 2.0, height / 2.0),
+        renderer.start_new_batch(Proj2D(camera), Some(font_tex));
+
+        let mut cursor = Vector2::new(width / 2.0, height / 2.0);
+        for (_, symbol) in text.char_indices() {
+            let glyph = font.advance_glyph(&mut cursor, symbol);
+            renderer
+                .draw_glyph(glyph, Some(Color::new(1.0, 1.0, 1.0, 0.0)));
+        }
+        renderer.draw_rect(
+            Rectangle::from_bot_left(
+                cursor,
+                Vector2::new(5.0, font_size as f32),
+            ),
             None,
+            Some(WHITE),
         );
 
         renderer.end_drawing();
