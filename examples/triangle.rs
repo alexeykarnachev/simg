@@ -2,6 +2,7 @@
 #![allow(unused_mut)]
 
 use nalgebra::Vector2;
+use sdl2::keyboard::{Keycode, Scancode};
 use simg::input::*;
 use simg::renderer::camera::*;
 use simg::renderer::color::*;
@@ -20,18 +21,34 @@ pub fn main() {
     let image_bytes = include_bytes!("./assets/box.png");
     let tex = renderer.load_texture_from_image_bytes(image_bytes);
 
-    let font_bytes =
-        include_bytes!("../assets/fonts/quicksand/Quicksand-Bold.otf")
-            .as_slice();
-    let font = renderer.load_font_from_otf_bytes(font_bytes, 64);
+    let font_bytes = include_bytes!(
+        "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
+    )
+    .as_slice();
+    let font = renderer.load_font_from_otf_bytes(font_bytes, 52);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 0.5;
     camera.position.x += width * 0.5;
 
+    let mut text = String::with_capacity(1024);
+
     let mut update = move || {
         input.update();
-        camera.rotation += 0.001;
+        text.push_str(&input.text_input);
+
+        if input
+            .scancodes
+            .just_repeated
+            .get(&Scancode::Backspace)
+            .is_some()
+        {
+            text.pop();
+        }
+
+        if text == "ROTATE!" {
+            camera.rotation += 0.001;
+        }
 
         renderer.clear_color(WHITE);
 
@@ -70,7 +87,7 @@ pub fn main() {
 
         renderer.start_new_batch(Proj2D(camera), Some(font));
         renderer.draw_text(
-            "ABC abc ZALOOPA!!!-- ~~ XYI WWW___===CC!!!1232  WW",
+            &text,
             Vector2::new(width / 2.0, height / 2.0),
             None,
         );

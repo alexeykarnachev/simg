@@ -12,6 +12,7 @@ const N_KEYBOARD_KEYS: usize = 1024;
 pub struct KeyStates<T: Copy + Eq + Hash> {
     pub pressed: HashSet<T>,
     pub just_pressed: HashSet<T>,
+    pub just_repeated: HashSet<T>,
     pub just_released: HashSet<T>,
 }
 
@@ -22,12 +23,15 @@ where
     pub fn clear(&mut self) {
         self.just_pressed.clear();
         self.just_released.clear();
+        self.just_repeated.clear();
     }
 
     pub fn press(&mut self, key: T) {
         if self.pressed.insert(key) {
             self.just_pressed.insert(key);
         }
+
+        self.just_repeated.insert(key);
     }
 
     pub fn release(&mut self, key: T) {
@@ -45,6 +49,7 @@ where
         Self {
             pressed: HashSet::default(),
             just_pressed: HashSet::default(),
+            just_repeated: HashSet::default(),
             just_released: HashSet::default(),
         }
     }
@@ -57,6 +62,7 @@ pub struct Input {
     pub keycodes: KeyStates<Keycode>,
     pub scancodes: KeyStates<Scancode>,
     pub mouse_buttons: KeyStates<MouseButton>,
+    pub text_input: String,
 }
 
 impl Input {
@@ -69,6 +75,7 @@ impl Input {
             keycodes: Default::default(),
             scancodes: Default::default(),
             mouse_buttons: Default::default(),
+            text_input: String::with_capacity(1024),
         }
     }
 
@@ -76,6 +83,7 @@ impl Input {
         self.keycodes.clear();
         self.scancodes.clear();
         self.mouse_buttons.clear();
+        self.text_input.clear();
 
         for event in self.event_pump.poll_iter() {
             match event {
@@ -102,7 +110,9 @@ impl Input {
                 Event::MouseButtonUp { mouse_btn, .. } => {
                     self.mouse_buttons.release(mouse_btn);
                 }
-                Event::TextInput { text, .. } => {}
+                Event::TextInput { text, .. } => {
+                    self.text_input.clone_from(&text);
+                }
                 _ => {}
             }
         }
