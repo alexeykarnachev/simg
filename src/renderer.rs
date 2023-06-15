@@ -164,7 +164,6 @@ pub struct Renderer {
     positions_vbo: glow::NativeBuffer,
     texcoords_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
-    use_tex_vbo: glow::NativeBuffer,
 
     n_textures: usize,
     textures: [u32; MAX_N_TEXTURES],
@@ -173,7 +172,6 @@ pub struct Renderer {
     positions: [f32; MAX_N_VERTICES * 3],
     texcoords: [f32; MAX_N_VERTICES * 2],
     colors: [f32; MAX_N_VERTICES * 4],
-    use_tex: [u32; MAX_N_VERTICES],
 
     n_batches: usize,
     batch_infos: [BatchInfo; MAX_N_BATCHES],
@@ -242,7 +240,6 @@ impl Renderer {
         let positions_vbo;
         let texcoords_vbo;
         let colors_vbo;
-        let use_tex_vbo;
         unsafe {
             gl.enable(glow::BLEND);
             gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
@@ -279,16 +276,6 @@ impl Renderer {
             );
             gl.enable_vertex_attrib_array(2);
             gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
-
-            use_tex_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(use_tex_vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (size_of::<u32>() * 1 * MAX_N_VERTICES) as i32,
-                glow::DYNAMIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(3);
-            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_INT, 0, 0);
         }
 
         Self {
@@ -301,7 +288,6 @@ impl Renderer {
             positions_vbo,
             texcoords_vbo,
             colors_vbo,
-            use_tex_vbo,
 
             n_textures: 0,
             textures: [0; MAX_N_TEXTURES],
@@ -310,7 +296,6 @@ impl Renderer {
             positions: [0.0; MAX_N_VERTICES * 3],
             texcoords: [0.0; MAX_N_VERTICES * 2],
             colors: [0.0; MAX_N_VERTICES * 4],
-            use_tex: [0; MAX_N_VERTICES],
 
             n_batches: 0,
             batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
@@ -324,9 +309,19 @@ impl Renderer {
         height: u32,
     ) -> usize {
         let n_components = bytes.len() as u32 / (width * height);
-        let (format, internal_format) = match n_components {
-            1 => (glow::ALPHA, glow::RGBA),
-            4 => (glow::RGBA, glow::RGBA),
+        let (format, internal_format, alignment) = match n_components {
+            1 => {
+                #[cfg(target_os = "emscripten")]
+                {
+                    (glow::ALPHA, glow::ALPHA, 1)
+                }
+
+                #[cfg(not(target_os = "emscripten"))]
+                {
+                    (glow::ALPHA, glow::RGBA, 1)
+                }
+            }
+            4 => (glow::RGBA, glow::RGBA, 4),
             _ => {
                 panic!(
                     "Can't load texture with {}-components pixel",
@@ -334,6 +329,10 @@ impl Renderer {
                 )
             }
         };
+
+        unsafe {
+            self.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, alignment);
+        }
 
         let tex = create_texture(
             &self.gl,
@@ -430,9 +429,6 @@ impl Renderer {
         if let Some(texcoord) = texcoord {
             self.texcoords[idx * 2 + 0] = texcoord.x;
             self.texcoords[idx * 2 + 1] = texcoord.y;
-            self.use_tex[idx] = 1;
-        } else {
-            self.use_tex[idx] = 0;
         }
 
         batch_info.count += 1;
@@ -526,6 +522,10 @@ impl Renderer {
     ) {
         use Projection::*;
 
+        if self.n_batches == MAX_N_BATCHES {
+            panic!("Maximum number of batches ({}) has been reached, can't start the new one. Call `end_drawing` to render all batches before starting the new one", self.n_batches);
+        }
+
         self.window_size = self.window.size();
         let transform = match proj {
             ProjScreen => Matrix4::new_orthographic(
@@ -595,11 +595,6 @@ impl Renderer {
                     self.colors_vbo,
                     &self.colors[start * 4..(start + count) * 4],
                 );
-                buffer_sub_data(
-                    &self.gl,
-                    self.use_tex_vbo,
-                    &self.use_tex[start * 1..(start + count) * 1],
-                );
 
                 self.gl.uniform_matrix_4_f32_slice(
                     self.gl
@@ -609,10 +604,11 @@ impl Renderer {
                     transform.as_slice(),
                 );
 
+                let mut use_tex = 0;
                 if let Some(tex) = tex_idx {
                     let tex = self.textures[tex];
                     self.gl.bind_texture(
-                        0,
+                        glow::TEXTURE_2D,
                         Some(glow::NativeTexture(
                             NonZeroU32::new(tex).unwrap(),
                         )),
@@ -623,7 +619,16 @@ impl Renderer {
                             .as_ref(),
                         0,
                     );
+
+                    use_tex = 1;
                 }
+
+                self.gl.uniform_1_u32(
+                    self.gl
+                        .get_uniform_location(self.program, "u_use_tex")
+                        .as_ref(),
+                    use_tex,
+                );
 
                 self.gl.use_program(Some(self.program));
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);

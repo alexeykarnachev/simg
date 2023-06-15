@@ -21,17 +21,15 @@ pub fn main() {
     let tex = renderer.load_texture_from_image_bytes(image_bytes);
 
     let font_bytes =
-        include_bytes!("../assets/fonts/quicksand/Quicksand-Regular.otf")
+        include_bytes!("../assets/fonts/quicksand/Quicksand-Bold.otf")
             .as_slice();
-    // let font = renderer.load_font_from_otf_bytes(font_bytes, 32);
-    let font = tex;
+    let font = renderer.load_font_from_otf_bytes(font_bytes, 64);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 0.5;
     camera.position.x += width * 0.5;
 
     let mut update = move || {
-        println!("---");
         input.update();
         camera.rotation += 0.001;
 
@@ -56,9 +54,8 @@ pub fn main() {
             None,
             Some(RED),
         );
-        renderer.end_drawing();
 
-        renderer.start_new_batch(Proj2D(camera), Some(font));
+        renderer.start_new_batch(Proj2D(camera), Some(tex));
         renderer.draw_rect(
             Rectangle::from_top_left(
                 Vector2::new(0.0, 0.0),
@@ -70,11 +67,14 @@ pub fn main() {
             )),
             None,
         );
-        // renderer.draw_text(
-        //     "ABC abc ZALOOPA!!!-- ~~ XYI WWW___===CC!!!1232  WW",
-        //     Vector2::new(width / 2.0, height / 2.0),
-        //     None,
-        // );
+
+        renderer.start_new_batch(Proj2D(camera), Some(font));
+        renderer.draw_text(
+            "ABC abc ZALOOPA!!!-- ~~ XYI WWW___===CC!!!1232  WW",
+            Vector2::new(width / 2.0, height / 2.0),
+            None,
+        );
+
         renderer.end_drawing();
 
         renderer.swap_window();

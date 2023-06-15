@@ -42,6 +42,7 @@ impl GlyphAtlas {
         let n_glyphs_per_row = (n_glyphs as f32).sqrt().ceil() as usize;
         let image_height = max_glyph_height * n_glyphs_per_row;
         let image_width = max_glyph_width * n_glyphs_per_row;
+
         let mut image = vec![0u8; image_width * image_height];
         for i_glyph in 0..n_glyphs {
             let ir = (i_glyph / n_glyphs_per_row) * max_glyph_height;
