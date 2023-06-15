@@ -371,8 +371,8 @@ impl Renderer {
     pub fn load_texture_from_font(&mut self, font: &Font) -> usize {
         self.load_texture_from_pixel_bytes(
             &font.pixels,
-            font.width,
-            font.height,
+            font.image_width,
+            font.image_height,
         )
     }
 

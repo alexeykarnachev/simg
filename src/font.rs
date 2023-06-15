@@ -13,8 +13,12 @@ pub struct Glyph {
 
 pub struct Font {
     pub pixels: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
+    pub image_width: u32,
+    pub image_height: u32,
+
+    pub size: u32,
+    pub ascent: f32,
+    pub descent: f32,
     glyphs: Vec<Glyph>,
 }
 
@@ -25,6 +29,19 @@ impl Font {
             fontdue::FontSettings::default(),
         )
         .unwrap();
+
+        let ascent;
+        let descent;
+        if let Some(metrics) =
+            font.horizontal_line_metrics(font_size as f32)
+        {
+            descent = metrics.descent;
+            ascent = metrics.ascent;
+        } else {
+            descent = -0.25 * font_size as f32;
+            ascent = 0.85 * font_size as f32;
+        }
+
         let mut glyphs = vec![];
 
         let mut metrics = Vec::new();
@@ -108,8 +125,11 @@ impl Font {
 
         Self {
             pixels: flipped_image,
-            width: image_width as u32,
-            height: image_height as u32,
+            image_width: image_width as u32,
+            image_height: image_height as u32,
+            size: font_size,
+            ascent,
+            descent,
             glyphs,
         }
     }
@@ -133,5 +153,15 @@ impl Font {
         cursor.add_assign(glyph.advance);
 
         glyph
+    }
+
+    pub fn get_cursor_rect(&self, cursor: Vector2<f32>) -> Rectangle {
+        Rectangle::from_bot_left(
+            Vector2::new(cursor.x, cursor.y + self.descent),
+            Vector2::new(
+                self.size as f32 / 10.0,
+                self.ascent - self.descent,
+            ),
+        )
     }
 }

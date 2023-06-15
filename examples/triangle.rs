@@ -2,7 +2,7 @@
 #![allow(unused_mut)]
 
 use nalgebra::Vector2;
-use sdl2::keyboard::{Keycode, Scancode};
+use sdl2::keyboard::Scancode;
 use simg::font::*;
 use simg::input::*;
 use simg::renderer::camera::*;
@@ -26,13 +26,13 @@ pub fn main() {
         "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
     )
     .as_slice();
-    let font_size = 52;
+    let font_size = 40;
     let font = Font::new(font_bytes, font_size);
     let font_tex = renderer.load_texture_from_font(&font);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
-    camera.zoom = 0.5;
-    camera.position.x += width * 0.5;
+    camera.zoom = 1.0;
+    // camera.position.x += width * 0.5;
 
     let mut text = String::with_capacity(1024);
 
@@ -90,17 +90,20 @@ pub fn main() {
 
         renderer.start_new_batch(Proj2D(camera), Some(font_tex));
 
-        let mut cursor = Vector2::new(width / 2.0, height / 2.0);
+        let cursor_max_x = width / 2.1;
+        let cursor_min_x = 0.0;
+        let mut cursor = Vector2::new(cursor_min_x, 0.0);
         for (_, symbol) in text.char_indices() {
             let glyph = font.advance_glyph(&mut cursor, symbol);
+            if cursor.x > cursor_max_x {
+                cursor.x = cursor_min_x;
+                cursor.y -= font_size as f32;
+            }
             renderer
                 .draw_glyph(glyph, Some(Color::new(1.0, 1.0, 1.0, 0.0)));
         }
         renderer.draw_rect(
-            Rectangle::from_bot_left(
-                cursor,
-                Vector2::new(5.0, font_size as f32),
-            ),
+            font.get_cursor_rect(cursor),
             None,
             Some(WHITE),
         );
