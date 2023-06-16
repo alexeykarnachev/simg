@@ -1,3 +1,4 @@
+pub mod camera;
 pub mod color;
 pub mod emscripten;
 pub mod glyph_atlas;

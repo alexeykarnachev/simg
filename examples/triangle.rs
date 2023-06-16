@@ -3,11 +3,11 @@
 
 use nalgebra::Vector2;
 use sdl2::keyboard::Scancode;
+use simg::camera::*;
 use simg::color::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
 use simg::program::ProgramArg::ColorArg;
-use simg::renderer::camera::*;
 use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
