@@ -21,7 +21,7 @@ pub fn main() {
     let sdl2 = sdl2::init().unwrap();
     let mut input = Input::new(&sdl2);
     let mut renderer =
-        Renderer::new(&sdl2, "triangle", width as u32, height as u32);
+        Renderer::new(&sdl2, "sandbox", width as u32, height as u32);
 
     let mut postfx_program =
         renderer.load_screen_rect_program(postfx_frag_src);

@@ -562,6 +562,8 @@ impl Renderer {
         postfx_program: Option<&Program>,
     ) {
         unsafe {
+            self.gl.bind_texture(glow::TEXTURE_2D, None);
+
             if postfx_program.is_some() {
                 self.gl.bind_framebuffer(
                     glow::FRAMEBUFFER,
