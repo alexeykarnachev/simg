@@ -12,6 +12,9 @@ use simg::renderer::*;
 use simg::shapes::*;
 
 pub fn main() {
+    let image_bytes = include_bytes!("./assets/box.png");
+    let postfx_frag_src = include_str!("./assets/postfx.frag");
+
     let width = 800.0;
     let height = 600.0;
     let sdl2 = sdl2::init().unwrap();
@@ -19,7 +22,9 @@ pub fn main() {
     let mut renderer =
         Renderer::new(&sdl2, "triangle", width as u32, height as u32);
 
-    let image_bytes = include_bytes!("./assets/box.png");
+    let postfx_program =
+        renderer.load_screen_rect_program(postfx_frag_src);
+
     let tex = renderer.load_texture_from_image_bytes(image_bytes);
 
     let font_bytes = include_bytes!(
@@ -32,7 +37,6 @@ pub fn main() {
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 1.0;
-    // camera.position.x += width * 0.5;
 
     let mut text = String::with_capacity(1024);
 
@@ -47,8 +51,6 @@ pub fn main() {
         if text == "ROTATE!" {
             camera.rotation += 0.001;
         }
-
-        renderer.clear_color(Color::new(0.1, 0.2, 0.3, 1.0));
 
         renderer.start_new_batch(ProjScreen, None);
         renderer.draw_triangle(
@@ -108,7 +110,7 @@ pub fn main() {
         );
         renderer.draw_rect(cursor_rect, None, Some(WHITE));
 
-        renderer.end_drawing();
+        renderer.end_drawing(PRUSSIAN_BLUE, Some(postfx_program));
 
         renderer.swap_window();
 

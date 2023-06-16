@@ -14,7 +14,10 @@ use glow::{HasContext, NativeTexture};
 
 const PRIMITIVE_VERT_SRC: &str = include_str!("../shaders/primitive.vert");
 const PRIMITIVE_FRAG_SRC: &str = include_str!("../shaders/primitive.frag");
+const SCREEN_RECT_VERT_SRC: &str =
+    include_str!("../shaders/screen_rect.vert");
 const MAX_N_VERTICES: usize = 1 << 15;
+const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
 
@@ -34,6 +37,13 @@ pub mod color {
 
         pub fn as_arr(&self) -> [f32; 4] {
             [self.r, self.g, self.b, self.a]
+        }
+
+        pub fn with_alpha(&self, a: f32) -> Self {
+            let mut color = self.clone();
+            color.a = a;
+
+            color
         }
     }
 
@@ -71,6 +81,12 @@ pub mod color {
         r: 0.0,
         g: 0.0,
         b: 1.0,
+        a: 1.0,
+    };
+    pub const PRUSSIAN_BLUE: Color = Color {
+        r: 0.0,
+        g: 0.19,
+        b: 0.36,
         a: 1.0,
     };
 }
@@ -164,6 +180,13 @@ pub struct Renderer {
     texcoords_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
 
+    postfx_buffer_size: (u32, u32),
+    postfx_fbo: glow::NativeFramebuffer,
+    postfx_tex: glow::Texture,
+
+    n_programs: usize,
+    programs: [u32; MAX_N_PROGRAMS],
+
     n_textures: usize,
     textures: [u32; MAX_N_TEXTURES],
 
@@ -238,6 +261,9 @@ impl Renderer {
         let positions_vbo;
         let texcoords_vbo;
         let colors_vbo;
+        let postfx_tex;
+        let postfx_fbo;
+        let postfx_buffer_size = window_size;
         unsafe {
             gl.enable(glow::BLEND);
             gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
@@ -274,6 +300,28 @@ impl Renderer {
             );
             gl.enable_vertex_attrib_array(2);
             gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
+
+            postfx_fbo = gl.create_framebuffer().unwrap();
+            postfx_tex = create_texture(
+                &gl,
+                glow::RGBA32F as i32,
+                postfx_buffer_size.0 as i32,
+                postfx_buffer_size.1 as i32,
+                glow::RGBA,
+                glow::FLOAT,
+                None,
+                glow::NEAREST,
+            );
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(postfx_fbo));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(postfx_tex),
+                0,
+            );
+            gl.draw_buffer(glow::COLOR_ATTACHMENT0);
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
         }
 
         Self {
@@ -287,6 +335,13 @@ impl Renderer {
             texcoords_vbo,
             colors_vbo,
 
+            postfx_buffer_size,
+            postfx_fbo,
+            postfx_tex,
+
+            n_programs: 0,
+            programs: [0; MAX_N_PROGRAMS],
+
             n_textures: 0,
             textures: [0; MAX_N_TEXTURES],
 
@@ -299,12 +354,38 @@ impl Renderer {
         }
     }
 
+    pub fn load_program(
+        &mut self,
+        vert_src: &str,
+        frag_src: &str,
+    ) -> usize {
+        if self.n_programs == MAX_N_PROGRAMS {
+            panic!("Can't create more than {} texture", MAX_N_TEXTURES);
+        }
+
+        let program = create_program(&self.gl, vert_src, frag_src);
+
+        let idx = self.n_programs;
+        self.programs[idx] = program.0.get();
+        self.n_programs += 1;
+
+        idx
+    }
+
+    pub fn load_screen_rect_program(&mut self, frag_src: &str) -> usize {
+        self.load_program(SCREEN_RECT_VERT_SRC, frag_src)
+    }
+
     pub fn load_texture_from_pixel_bytes(
         &mut self,
         bytes: &[u8],
         width: u32,
         height: u32,
     ) -> usize {
+        if self.n_textures == MAX_N_TEXTURES {
+            panic!("Can't create more than {} texture", MAX_N_TEXTURES);
+        }
+
         let n_components = bytes.len() as u32 / (width * height);
         let (format, internal_format, alignment) = match n_components {
             1 => {
@@ -342,10 +423,6 @@ impl Renderer {
             glow::LINEAR,
         );
 
-        if self.n_textures == MAX_N_TEXTURES {
-            panic!("Can't create more than {} texture", MAX_N_TEXTURES);
-        }
-
         let idx = self.n_textures;
         self.textures[idx] = tex.0.get();
         self.n_textures += 1;
@@ -377,13 +454,6 @@ impl Renderer {
             atlas.image_width,
             atlas.image_height,
         )
-    }
-
-    pub fn clear_color(&self, color: Color) {
-        unsafe {
-            self.gl.clear_color(color.r, color.g, color.b, color.a);
-            self.gl.clear(glow::COLOR_BUFFER_BIT);
-        }
     }
 
     fn draw_vertex(
@@ -507,14 +577,42 @@ impl Renderer {
         self.n_batches += 1;
     }
 
-    pub fn end_drawing(&mut self) {
+    pub fn end_drawing(
+        &mut self,
+        clear_color: Color,
+        postfx_program: Option<usize>,
+    ) {
         unsafe {
-            self.gl.viewport(
-                0,
-                0,
-                self.window_size.0 as i32,
-                self.window_size.1 as i32,
+            if postfx_program.is_some() {
+                self.gl.bind_framebuffer(
+                    glow::FRAMEBUFFER,
+                    Some(self.postfx_fbo),
+                );
+                self.gl.viewport(
+                    0,
+                    0,
+                    self.postfx_buffer_size.0 as i32,
+                    self.postfx_buffer_size.1 as i32,
+                );
+            } else {
+                self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                self.gl.viewport(
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                );
+            }
+
+            self.gl.clear_color(
+                clear_color.r,
+                clear_color.g,
+                clear_color.b,
+                clear_color.a,
             );
+            self.gl
+                .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            self.gl.use_program(Some(self.program));
             self.gl.bind_vertex_array(Some(self.vao));
 
             for i_batch in 0..self.n_batches {
@@ -574,8 +672,33 @@ impl Renderer {
                     use_tex,
                 );
 
-                self.gl.use_program(Some(self.program));
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
+            }
+
+            if let Some(idx) = postfx_program {
+                let program = glow::NativeProgram(
+                    NonZeroU32::new(self.programs[idx]).unwrap(),
+                );
+                self.gl.use_program(Some(program));
+                self.gl.uniform_1_i32(
+                    self.gl
+                        .get_uniform_location(program, "u_tex")
+                        .as_ref(),
+                    0,
+                );
+
+                self.gl.active_texture(glow::TEXTURE0 + 0);
+                self.gl
+                    .bind_texture(glow::TEXTURE_2D, Some(self.postfx_tex));
+
+                self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                self.gl.viewport(
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                );
+                self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             }
         }
 
