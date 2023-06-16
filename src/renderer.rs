@@ -186,7 +186,7 @@ pub mod camera {
 struct BatchInfo {
     start: usize,
     count: usize,
-    tex_idx: Option<usize>,
+    tex: Option<u32>,
     transform: Matrix4<f32>,
 }
 
@@ -198,13 +198,13 @@ pub enum Projection {
 impl BatchInfo {
     pub fn new(
         start: usize,
-        tex_idx: Option<usize>,
+        tex: Option<u32>,
         transform: Matrix4<f32>,
     ) -> Self {
         Self {
             start,
             count: 0,
-            tex_idx,
+            tex,
             transform,
         }
     }
@@ -215,7 +215,7 @@ impl Default for BatchInfo {
         Self {
             start: 0,
             count: 0,
-            tex_idx: None,
+            tex: None,
             transform: Matrix4::identity(),
         }
     }
@@ -235,9 +235,6 @@ pub struct Renderer {
     postfx_buffer_size: (u32, u32),
     postfx_fbo: glow::NativeFramebuffer,
     postfx_tex: glow::Texture,
-
-    n_textures: usize,
-    textures: [u32; MAX_N_TEXTURES],
 
     positions: [f32; MAX_N_VERTICES * 3],
     texcoords: [f32; MAX_N_VERTICES * 2],
@@ -391,9 +388,6 @@ impl Renderer {
             postfx_fbo,
             postfx_tex,
 
-            n_textures: 0,
-            textures: [0; MAX_N_TEXTURES],
-
             positions: [0.0; MAX_N_VERTICES * 3],
             texcoords: [0.0; MAX_N_VERTICES * 2],
             colors: [0.0; MAX_N_VERTICES * 4],
@@ -420,11 +414,7 @@ impl Renderer {
         bytes: &[u8],
         width: u32,
         height: u32,
-    ) -> usize {
-        if self.n_textures == MAX_N_TEXTURES {
-            panic!("Can't create more than {} texture", MAX_N_TEXTURES);
-        }
-
+    ) -> u32 {
         let n_components = bytes.len() as u32 / (width * height);
         let (format, internal_format, alignment) = match n_components {
             1 => {
@@ -462,17 +452,10 @@ impl Renderer {
             glow::LINEAR,
         );
 
-        let idx = self.n_textures;
-        self.textures[idx] = tex.0.get();
-        self.n_textures += 1;
-
-        idx
+        tex.0.get()
     }
 
-    pub fn load_texture_from_image_bytes(
-        &mut self,
-        bytes: &[u8],
-    ) -> usize {
+    pub fn load_texture_from_image_bytes(&mut self, bytes: &[u8]) -> u32 {
         let image = load_from_memory_with_format(bytes, ImageFormat::Png)
             .expect("Can't decode image bytes")
             .into_rgba8();
@@ -487,7 +470,7 @@ impl Renderer {
     pub fn load_texture_from_glyph_atlas(
         &mut self,
         atlas: &GlyphAtlas,
-    ) -> usize {
+    ) -> u32 {
         self.load_texture_from_pixel_bytes(
             &atlas.pixels,
             atlas.image_width,
@@ -568,11 +551,7 @@ impl Renderer {
         self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
 
-    pub fn start_new_batch(
-        &mut self,
-        proj: Projection,
-        texture: Option<usize>,
-    ) {
+    pub fn start_new_batch(&mut self, proj: Projection, tex: Option<u32>) {
         use Projection::*;
 
         if self.n_batches == MAX_N_BATCHES {
@@ -611,7 +590,7 @@ impl Renderer {
             prev_batch_info.start + prev_batch_info.count
         };
 
-        let batch_info = BatchInfo::new(start, texture, transform);
+        let batch_info = BatchInfo::new(start, tex, transform);
         self.batch_infos[self.n_batches] = batch_info;
         self.n_batches += 1;
     }
@@ -659,7 +638,7 @@ impl Renderer {
                 let start = batch_info.start;
                 let count = batch_info.count;
                 let transform = batch_info.transform;
-                let tex_idx = batch_info.tex_idx;
+                let tex = batch_info.tex;
 
                 buffer_sub_data(
                     &self.gl,
@@ -684,8 +663,7 @@ impl Renderer {
                 );
 
                 let mut use_tex = 0;
-                if let Some(tex) = tex_idx {
-                    let tex = self.textures[tex];
+                if let Some(tex) = tex {
                     self.gl.bind_texture(
                         glow::TEXTURE_2D,
                         Some(glow::NativeTexture(
