@@ -3,7 +3,7 @@
 
 use nalgebra::Vector2;
 use sdl2::keyboard::Scancode;
-use simg::font::*;
+use simg::glyph_atlas::*;
 use simg::input::*;
 use simg::renderer::camera::*;
 use simg::renderer::color::*;
@@ -27,8 +27,8 @@ pub fn main() {
     )
     .as_slice();
     let font_size = 40;
-    let font = Font::new(font_bytes, font_size);
-    let font_tex = renderer.load_texture_from_font(&font);
+    let glyph_atlas = GlyphAtlas::new(font_bytes, font_size);
+    let glyph_tex = renderer.load_texture_from_glyph_atlas(&glyph_atlas);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
     camera.zoom = 1.0;
@@ -83,13 +83,13 @@ pub fn main() {
             None,
         );
 
-        renderer.start_new_batch(Proj2D(camera), Some(font_tex));
+        renderer.start_new_batch(Proj2D(camera), Some(glyph_tex));
 
         let cursor_max_x = width / 2.1;
         let cursor_min_x = -width / 2.0;
         let mut cursor = Vector2::new(cursor_min_x, height / 2.3);
         for (_, symbol) in text.char_indices() {
-            let glyph = font.get_glyph(&cursor, symbol);
+            let glyph = glyph_atlas.get_glyph(&cursor, symbol);
             cursor += glyph.advance;
             if cursor.x > cursor_max_x {
                 cursor.x = cursor_min_x;
@@ -98,11 +98,15 @@ pub fn main() {
             renderer
                 .draw_glyph(glyph, Some(Color::new(1.0, 1.0, 1.0, 0.0)));
         }
-        renderer.draw_rect(
-            font.get_cursor_rect(cursor),
-            None,
-            Some(WHITE),
+
+        let cursor_rect = Rectangle::from_bot_left(
+            Vector2::new(cursor.x, cursor.y + glyph_atlas.glyph_descent),
+            Vector2::new(
+                glyph_atlas.font_size as f32 / 10.0,
+                glyph_atlas.glyph_ascent - glyph_atlas.glyph_descent,
+            ),
         );
+        renderer.draw_rect(cursor_rect, None, Some(WHITE));
 
         renderer.end_drawing();
 

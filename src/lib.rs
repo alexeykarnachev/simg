@@ -1,5 +1,5 @@
 pub mod emscripten;
-pub mod font;
+pub mod glyph_atlas;
 pub mod input;
 pub mod renderer;
 pub mod shapes;

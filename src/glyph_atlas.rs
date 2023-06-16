@@ -9,18 +9,19 @@ pub struct Glyph {
     pub advance: Vector2<f32>,
 }
 
-pub struct Font {
+pub struct GlyphAtlas {
     pub pixels: Vec<u8>,
     pub image_width: u32,
     pub image_height: u32,
 
-    pub size: u32,
-    pub ascent: f32,
-    pub descent: f32,
+    pub font_size: u32,
+    pub glyph_ascent: f32,
+    pub glyph_descent: f32,
+
     glyphs: Vec<Glyph>,
 }
 
-impl Font {
+impl GlyphAtlas {
     pub fn new(font_bytes: &[u8], font_size: u32) -> Self {
         let font = fontdue::Font::from_bytes(
             font_bytes,
@@ -125,9 +126,9 @@ impl Font {
             pixels: flipped_image,
             image_width: image_width as u32,
             image_height: image_height as u32,
-            size: font_size,
-            ascent,
-            descent,
+            font_size,
+            glyph_ascent: ascent,
+            glyph_descent: descent,
             glyphs,
         }
     }
@@ -142,15 +143,5 @@ impl Font {
         glyph.rect.translate_assign(cursor);
 
         glyph
-    }
-
-    pub fn get_cursor_rect(&self, cursor: Vector2<f32>) -> Rectangle {
-        Rectangle::from_bot_left(
-            Vector2::new(cursor.x, cursor.y + self.descent),
-            Vector2::new(
-                self.size as f32 / 10.0,
-                self.ascent - self.descent,
-            ),
-        )
     }
 }

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use crate::font::*;
+use crate::glyph_atlas::*;
 use crate::shapes::*;
 use image::{load_from_memory_with_format, ImageFormat};
 use image::{DynamicImage, EncodableLayout};
@@ -368,11 +368,14 @@ impl Renderer {
         )
     }
 
-    pub fn load_texture_from_font(&mut self, font: &Font) -> usize {
+    pub fn load_texture_from_glyph_atlas(
+        &mut self,
+        atlas: &GlyphAtlas,
+    ) -> usize {
         self.load_texture_from_pixel_bytes(
-            &font.pixels,
-            font.image_width,
-            font.image_height,
+            &atlas.pixels,
+            atlas.image_width,
+            atlas.image_height,
         )
     }
 
