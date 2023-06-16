@@ -39,6 +39,10 @@ where
             self.just_released.remove(&key);
         }
     }
+
+    pub fn is_just_repeated(&self, key: T) -> bool {
+        self.just_repeated.get(&key).is_some()
+    }
 }
 
 impl<T> Default for KeyStates<T>

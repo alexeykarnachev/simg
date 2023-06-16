@@ -40,12 +40,7 @@ pub fn main() {
         input.update();
         text.push_str(&input.text_input);
 
-        if input
-            .scancodes
-            .just_repeated
-            .get(&Scancode::Backspace)
-            .is_some()
-        {
+        if input.scancodes.is_just_repeated(Scancode::Backspace) {
             text.pop();
         }
 
@@ -91,8 +86,8 @@ pub fn main() {
         renderer.start_new_batch(Proj2D(camera), Some(font_tex));
 
         let cursor_max_x = width / 2.1;
-        let cursor_min_x = 0.0;
-        let mut cursor = Vector2::new(cursor_min_x, 0.0);
+        let cursor_min_x = -width / 2.0;
+        let mut cursor = Vector2::new(cursor_min_x, height / 2.3);
         for (_, symbol) in text.char_indices() {
             let glyph = font.advance_glyph(&mut cursor, symbol);
             if cursor.x > cursor_max_x {
