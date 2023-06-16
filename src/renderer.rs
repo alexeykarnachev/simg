@@ -320,7 +320,10 @@ impl Renderer {
                 Some(postfx_tex),
                 0,
             );
+
+            #[cfg(not(target_os = "emscripten"))]
             gl.draw_buffer(glow::COLOR_ATTACHMENT0);
+
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
         }
 
