@@ -3,10 +3,11 @@
 
 use nalgebra::Vector2;
 use sdl2::keyboard::Scancode;
+use simg::color::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
+use simg::program::ProgramArg::ColorArg;
 use simg::renderer::camera::*;
-use simg::renderer::color::*;
 use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
@@ -22,7 +23,7 @@ pub fn main() {
     let mut renderer =
         Renderer::new(&sdl2, "triangle", width as u32, height as u32);
 
-    let postfx_program =
+    let mut postfx_program =
         renderer.load_screen_rect_program(postfx_frag_src);
 
     let tex = renderer.load_texture_from_image_bytes(image_bytes);
@@ -110,7 +111,10 @@ pub fn main() {
         );
         renderer.draw_rect(cursor_rect, None, Some(WHITE));
 
-        renderer.end_drawing(PRUSSIAN_BLUE, Some(postfx_program));
+        let postfx_color =
+            Color::new(0.05 * text.len() as f32, 0.0, 0.0, 1.0);
+        postfx_program.set_arg("u_color", ColorArg(postfx_color));
+        renderer.end_drawing(PRUSSIAN_BLUE, Some(&postfx_program));
 
         renderer.swap_window();
 

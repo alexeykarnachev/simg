@@ -1,15 +1,17 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use crate::color::Color;
 use crate::glyph_atlas::*;
+use crate::program::*;
 use crate::shapes::*;
 use image::{load_from_memory_with_format, ImageFormat};
 use image::{DynamicImage, EncodableLayout};
 use nalgebra::{Matrix4, Vector2};
+use std::collections::HashMap;
 use std::{mem::size_of, num::NonZeroU32};
 
 use camera::*;
-use color::*;
 use glow::{HasContext, NativeTexture};
 
 const PRIMITIVE_VERT_SRC: &str = include_str!("../shaders/primitive.vert");
@@ -21,74 +23,124 @@ const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
 
-pub mod color {
-    #[derive(Clone, Copy)]
-    pub struct Color {
-        pub r: f32,
-        pub g: f32,
-        pub b: f32,
-        pub a: f32,
+impl Program {
+    fn new_gl(gl: &glow::Context, vert_src: &str, frag_src: &str) -> Self {
+        let program;
+
+        #[cfg(target_os = "emscripten")]
+        let header = r#"#version 300 es
+            #ifdef GL_ES
+            precision highp float;
+            #endif
+        "#;
+
+        #[cfg(not(target_os = "emscripten"))]
+        let header = r#"#version 460 core
+        "#;
+
+        unsafe {
+            program = gl.create_program().expect("Cannot create program");
+
+            let shaders_src = [
+                (glow::VERTEX_SHADER, header.to_owned() + vert_src),
+                (glow::FRAGMENT_SHADER, header.to_owned() + frag_src),
+            ];
+
+            let mut shaders = Vec::with_capacity(shaders_src.len());
+            for (shader_type, shader_src) in shaders_src.iter() {
+                let shader = gl
+                    .create_shader(*shader_type)
+                    .expect("Cannot create shader");
+                gl.shader_source(shader, shader_src);
+                gl.compile_shader(shader);
+                if !gl.get_shader_compile_status(shader) {
+                    panic!("{}", gl.get_shader_info_log(shader));
+                }
+                gl.attach_shader(program, shader);
+                shaders.push(shader);
+            }
+
+            gl.link_program(program);
+            if !gl.get_program_link_status(program) {
+                panic!("{}", gl.get_program_info_log(program));
+            }
+
+            for shader in shaders {
+                gl.detach_shader(program, shader);
+                gl.delete_shader(shader);
+            }
+        }
+
+        Self::new(program.0.get())
     }
 
-    impl Color {
-        pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
-            Self { r, g, b, a }
-        }
+    fn to_glow(&self) -> glow::NativeProgram {
+        glow::NativeProgram(NonZeroU32::new(self.idx).unwrap())
+    }
 
-        pub fn as_arr(&self) -> [f32; 4] {
-            [self.r, self.g, self.b, self.a]
-        }
-
-        pub fn with_alpha(&self, a: f32) -> Self {
-            let mut color = self.clone();
-            color.a = a;
-
-            color
+    fn bind(&self, gl: &glow::Context) {
+        unsafe {
+            gl.use_program(Some(self.to_glow()));
         }
     }
 
-    pub const BLACK: Color = Color {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const GRAY: Color = Color {
-        r: 0.5,
-        g: 0.5,
-        b: 0.5,
-        a: 1.0,
-    };
-    pub const WHITE: Color = Color {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const RED: Color = Color {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const GREEN: Color = Color {
-        r: 0.0,
-        g: 1.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const BLUE: Color = Color {
-        r: 0.0,
-        g: 0.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const PRUSSIAN_BLUE: Color = Color {
-        r: 0.0,
-        g: 0.19,
-        b: 0.36,
-        a: 1.0,
-    };
+    fn set_arg_uniforms(&self, gl: &glow::Context) {
+        use ProgramArg::*;
+        let program = self.to_glow();
+
+        unsafe {
+            for (name, arg) in self.args.iter() {
+                let loc = gl.get_uniform_location(program, name).unwrap();
+                match arg {
+                    FloatArg(val) => {
+                        gl.uniform_1_f32(Some(&loc), *val);
+                    }
+                    ColorArg(val) => {
+                        gl.uniform_4_f32(
+                            Some(&loc),
+                            val.r,
+                            val.g,
+                            val.b,
+                            val.a,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn set_uniform_1_i32(&self, gl: &glow::Context, name: &str, val: i32) {
+        unsafe {
+            gl.uniform_1_i32(
+                gl.get_uniform_location(self.to_glow(), name).as_ref(),
+                val,
+            );
+        }
+    }
+
+    fn set_uniform_1_u32(&self, gl: &glow::Context, name: &str, val: u32) {
+        unsafe {
+            gl.uniform_1_u32(
+                gl.get_uniform_location(self.to_glow(), name).as_ref(),
+                val,
+            );
+        }
+    }
+
+    fn set_uniform_matrix_4_f32(
+        &self,
+        gl: &glow::Context,
+        name: &str,
+        val: &[f32],
+    ) {
+        unsafe {
+            gl.uniform_matrix_4_f32_slice(
+                gl.get_uniform_location(self.to_glow(), name).as_ref(),
+                false,
+                val,
+            );
+        }
+    }
 }
 
 pub mod camera {
@@ -173,7 +225,7 @@ pub struct Renderer {
     window: sdl2::video::Window,
     window_size: (u32, u32),
     gl: glow::Context,
-    program: glow::NativeProgram,
+    program: Program,
 
     vao: glow::NativeVertexArray,
     positions_vbo: glow::NativeBuffer,
@@ -183,9 +235,6 @@ pub struct Renderer {
     postfx_buffer_size: (u32, u32),
     postfx_fbo: glow::NativeFramebuffer,
     postfx_tex: glow::Texture,
-
-    n_programs: usize,
-    programs: [u32; MAX_N_PROGRAMS],
 
     n_textures: usize,
     textures: [u32; MAX_N_TEXTURES],
@@ -255,7 +304,7 @@ impl Renderer {
 
         // ---------------------------------------------------------------
         let program =
-            create_program(&gl, PRIMITIVE_VERT_SRC, PRIMITIVE_FRAG_SRC);
+            Program::new_gl(&gl, PRIMITIVE_VERT_SRC, PRIMITIVE_FRAG_SRC);
 
         let vao;
         let positions_vbo;
@@ -342,9 +391,6 @@ impl Renderer {
             postfx_fbo,
             postfx_tex,
 
-            n_programs: 0,
-            programs: [0; MAX_N_PROGRAMS],
-
             n_textures: 0,
             textures: [0; MAX_N_TEXTURES],
 
@@ -361,21 +407,11 @@ impl Renderer {
         &mut self,
         vert_src: &str,
         frag_src: &str,
-    ) -> usize {
-        if self.n_programs == MAX_N_PROGRAMS {
-            panic!("Can't create more than {} texture", MAX_N_TEXTURES);
-        }
-
-        let program = create_program(&self.gl, vert_src, frag_src);
-
-        let idx = self.n_programs;
-        self.programs[idx] = program.0.get();
-        self.n_programs += 1;
-
-        idx
+    ) -> Program {
+        Program::new_gl(&self.gl, vert_src, frag_src)
     }
 
-    pub fn load_screen_rect_program(&mut self, frag_src: &str) -> usize {
+    pub fn load_screen_rect_program(&mut self, frag_src: &str) -> Program {
         self.load_program(SCREEN_RECT_VERT_SRC, frag_src)
     }
 
@@ -583,7 +619,7 @@ impl Renderer {
     pub fn end_drawing(
         &mut self,
         clear_color: Color,
-        postfx_program: Option<usize>,
+        postfx_program: Option<&Program>,
     ) {
         unsafe {
             if postfx_program.is_some() {
@@ -615,7 +651,7 @@ impl Renderer {
             );
             self.gl
                 .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
-            self.gl.use_program(Some(self.program));
+            self.program.bind(&self.gl);
             self.gl.bind_vertex_array(Some(self.vao));
 
             for i_batch in 0..self.n_batches {
@@ -641,11 +677,9 @@ impl Renderer {
                     &self.colors[start * 4..(start + count) * 4],
                 );
 
-                self.gl.uniform_matrix_4_f32_slice(
-                    self.gl
-                        .get_uniform_location(self.program, "u_transform")
-                        .as_ref(),
-                    false,
+                self.program.set_uniform_matrix_4_f32(
+                    &self.gl,
+                    "u_transform",
                     transform.as_slice(),
                 );
 
@@ -658,37 +692,23 @@ impl Renderer {
                             NonZeroU32::new(tex).unwrap(),
                         )),
                     );
-                    self.gl.uniform_1_i32(
-                        self.gl
-                            .get_uniform_location(self.program, "u_tex")
-                            .as_ref(),
-                        0,
-                    );
+                    self.program.set_uniform_1_i32(&self.gl, "u_tex", 0);
 
                     use_tex = 1;
                 }
-
-                self.gl.uniform_1_u32(
-                    self.gl
-                        .get_uniform_location(self.program, "u_use_tex")
-                        .as_ref(),
+                self.program.set_uniform_1_u32(
+                    &self.gl,
+                    "u_use_tex",
                     use_tex,
                 );
 
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
             }
 
-            if let Some(idx) = postfx_program {
-                let program = glow::NativeProgram(
-                    NonZeroU32::new(self.programs[idx]).unwrap(),
-                );
-                self.gl.use_program(Some(program));
-                self.gl.uniform_1_i32(
-                    self.gl
-                        .get_uniform_location(program, "u_tex")
-                        .as_ref(),
-                    0,
-                );
+            if let Some(program) = postfx_program {
+                program.bind(&self.gl);
+                program.set_arg_uniforms(&self.gl);
+                program.set_uniform_1_i32(&self.gl, "u_tex", 0);
 
                 self.gl.active_texture(glow::TEXTURE0 + 0);
                 self.gl
@@ -701,6 +721,7 @@ impl Renderer {
                     self.window_size.0 as i32,
                     self.window_size.1 as i32,
                 );
+
                 self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             }
         }
@@ -711,60 +732,6 @@ impl Renderer {
     pub fn swap_window(&self) {
         self.window.gl_swap_window();
     }
-}
-
-fn create_program(
-    gl: &glow::Context,
-    vert_src: &str,
-    frag_src: &str,
-) -> glow::NativeProgram {
-    let program;
-
-    #[cfg(target_os = "emscripten")]
-    let header = r#"#version 300 es
-        #ifdef GL_ES
-        precision highp float;
-        #endif
-    "#;
-
-    #[cfg(not(target_os = "emscripten"))]
-    let header = r#"#version 460 core
-    "#;
-
-    unsafe {
-        program = gl.create_program().expect("Cannot create program");
-
-        let shaders_src = [
-            (glow::VERTEX_SHADER, header.to_owned() + vert_src),
-            (glow::FRAGMENT_SHADER, header.to_owned() + frag_src),
-        ];
-
-        let mut shaders = Vec::with_capacity(shaders_src.len());
-        for (shader_type, shader_src) in shaders_src.iter() {
-            let shader = gl
-                .create_shader(*shader_type)
-                .expect("Cannot create shader");
-            gl.shader_source(shader, shader_src);
-            gl.compile_shader(shader);
-            if !gl.get_shader_compile_status(shader) {
-                panic!("{}", gl.get_shader_info_log(shader));
-            }
-            gl.attach_shader(program, shader);
-            shaders.push(shader);
-        }
-
-        gl.link_program(program);
-        if !gl.get_program_link_status(program) {
-            panic!("{}", gl.get_program_info_log(program));
-        }
-
-        for shader in shaders {
-            gl.detach_shader(program, shader);
-            gl.delete_shader(shader);
-        }
-    }
-
-    program
 }
 
 fn create_texture(
