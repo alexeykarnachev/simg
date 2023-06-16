@@ -1,5 +1,3 @@
-use std::ops::AddAssign;
-
 use crate::shapes::Rectangle;
 use fontdue;
 use nalgebra::Vector2;
@@ -134,23 +132,14 @@ impl Font {
         }
     }
 
-    fn get_glyph(&self, symbol: char) -> Glyph {
+    pub fn get_glyph(&self, cursor: &Vector2<f32>, symbol: char) -> Glyph {
         let mut idx = symbol as usize;
         if idx < 32 || idx > 126 {
             idx = 63; // Question mark
         }
 
-        self.glyphs[idx - 32]
-    }
-
-    pub fn advance_glyph(
-        &self,
-        cursor: &mut Vector2<f32>,
-        symbol: char,
-    ) -> Glyph {
-        let mut glyph = self.get_glyph(symbol);
+        let mut glyph = self.glyphs[idx - 32];
         glyph.rect.translate_assign(cursor);
-        cursor.add_assign(glyph.advance);
 
         glyph
     }
