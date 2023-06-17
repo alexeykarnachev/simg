@@ -3,6 +3,7 @@
 
 use nalgebra::Vector2;
 use sdl2::keyboard::Scancode;
+use simg::audio_player::AudioPlayer;
 use simg::camera::*;
 use simg::color::*;
 use simg::glyph_atlas::*;
@@ -12,21 +13,27 @@ use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
 
+mod resources {
+    pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
+    pub const MUSIC: &[u8] = include_bytes!("./assets/Shinrin-Yoku.ogg");
+    pub const BOX_IMAGE: &[u8] = include_bytes!("./assets/box.png");
+}
+
 pub fn main() {
-    let image_bytes = include_bytes!("./assets/box.png");
-    let postfx_frag_src = include_str!("./assets/postfx.frag");
+    use resources::*;
 
     let width = 800.0;
     let height = 600.0;
     let sdl2 = sdl2::init().unwrap();
     let mut input = Input::new(&sdl2);
+
     let mut renderer =
         Renderer::new(&sdl2, "sandbox", width as u32, height as u32);
 
     let mut postfx_program =
-        renderer.load_screen_rect_program(postfx_frag_src);
+        renderer.load_screen_rect_program(POSTFX_FRAG_SRC);
 
-    let tex = renderer.load_texture_from_image_bytes(image_bytes);
+    let tex = renderer.load_texture_from_image_bytes(BOX_IMAGE);
 
     let font_bytes = include_bytes!(
         "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
@@ -41,9 +48,21 @@ pub fn main() {
 
     let mut text = String::with_capacity(1024);
 
+    let mut audio_player = AudioPlayer::new();
+
+    let mut is_mixer_created = false;
     let mut update = move || {
         input.update();
         text.push_str(&input.text_input);
+
+        if !audio_player.is_initialized
+            && input.scancodes.is_just_pressed(Scancode::Space)
+        {
+            audio_player.init(&sdl2);
+            let music = audio_player.load_music_from_bytes(MUSIC);
+            audio_player.play_music(music);
+            println!("PLAY!");
+        }
 
         if input.scancodes.is_just_repeated(Scancode::Backspace) {
             text.pop();
