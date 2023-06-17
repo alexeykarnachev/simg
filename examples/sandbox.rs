@@ -26,17 +26,17 @@ mod resources {
 
 #[derive(Default)]
 struct Game {
-    music: usize,
-    sounds: Vec<usize>,
-    sound_idx: usize,
+    music_idx: usize,
+    chunk_inds: Vec<usize>,
+    idx: usize,
 }
 
 impl Game {
-    pub fn get_sound(&mut self) -> usize {
-        let sound = self.sounds[self.sound_idx];
-        self.sound_idx = (self.sound_idx + 1) % self.sounds.len();
+    pub fn get_chunk_idx(&mut self) -> usize {
+        let chunk_idx = self.chunk_inds[self.idx % self.chunk_inds.len()];
+        self.idx += 1;
 
-        sound
+        chunk_idx
     }
 }
 
@@ -151,28 +151,19 @@ pub fn main() {
             && !audio_player.is_initialized
         {
             audio_player.init(&sdl2);
-            game.music = audio_player.load_music_from_bytes(MUSIC);
+            game.music_idx = audio_player.load_music_from_bytes(MUSIC);
+            game.chunk_inds
+                .push(audio_player.load_chunk_from_wav_bytes(SOUND_0));
+            game.chunk_inds
+                .push(audio_player.load_chunk_from_wav_bytes(SOUND_1));
 
-            let mut reader = hound::WavReader::new(SOUND_0).unwrap();
-            println!("{:?}", reader.spec());
-            let foo = Vec::from_iter(
-                reader.samples::<i16>().map(|x| x.unwrap()),
-            );
-            game.sounds.push(audio_player.load_sound_from_bytes(&foo));
-
-            let mut reader = hound::WavReader::new(SOUND_1).unwrap();
-            println!("{:?}", reader.spec());
-            let foo = Vec::from_iter(
-                reader.samples::<i16>().map(|x| x.unwrap()),
-            );
-            game.sounds.push(audio_player.load_sound_from_bytes(&foo));
-            // audio_player.play_music(game.music);
+            audio_player.play_music(game.music_idx);
         }
 
         if input.keycodes.is_just_pressed_any()
             && audio_player.is_initialized
         {
-            audio_player.play_sound(game.get_sound());
+            audio_player.play_chunk(game.get_chunk_idx());
         }
 
         return !input.should_quit;

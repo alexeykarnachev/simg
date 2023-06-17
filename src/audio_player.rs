@@ -1,11 +1,9 @@
-use sdl2::mixer::{
-    Channel, Chunk, InitFlag, Music, AUDIO_S16LSB, DEFAULT_CHANNELS,
-};
+use sdl2::mixer::{Channel, Chunk, InitFlag, Music, AUDIO_S16SYS};
 
 pub struct AudioPlayer<'a> {
     pub is_initialized: bool,
     musics: Vec<Music<'a>>,
-    sounds: Vec<Chunk>,
+    chunks: Vec<Chunk>,
 }
 
 impl AudioPlayer<'_> {
@@ -13,7 +11,7 @@ impl AudioPlayer<'_> {
         Self {
             is_initialized: false,
             musics: vec![],
-            sounds: vec![],
+            chunks: vec![],
         }
     }
 
@@ -21,11 +19,11 @@ impl AudioPlayer<'_> {
         let _audio = sdl2.audio().unwrap();
         Box::leak(Box::new(_audio));
 
-        let format = AUDIO_S16LSB;
-        let n_channels = DEFAULT_CHANNELS;
-        let frequency = 48000;
-        let chunk_size = 256;
-        let n_mixed_channels = 16;
+        let format = AUDIO_S16SYS;
+        let n_channels = 2;
+        let frequency = 44100;
+        let chunk_size = 1024;
+        let n_mixed_channels = 8;
 
         sdl2::mixer::open_audio(frequency, format, n_channels, chunk_size)
             .unwrap();
@@ -49,21 +47,19 @@ impl AudioPlayer<'_> {
         idx
     }
 
-    pub fn load_sound_from_bytes(&mut self, bytes: &[i16]) -> usize {
-        let buffer = bytes.to_vec().into_boxed_slice();
-        let sound = Chunk::from_raw_buffer(buffer).unwrap();
-        let idx = self.sounds.len();
-        self.sounds.push(sound);
+    pub fn load_chunk_from_wav_bytes(&mut self, bytes: &[u8]) -> usize {
+        let rwops = sdl2::rwops::RWops::from_bytes(bytes).unwrap();
+        let chunk = sdl2::mixer::LoaderRWops::load_wav(&rwops).unwrap();
+        self.chunks.push(chunk);
 
-        idx
+        self.chunks.len() - 1
     }
 
-    pub fn load_sound_from_file(&mut self, file_path: &str) -> usize {
+    pub fn load_chunk_from_file(&mut self, file_path: &str) -> usize {
         let sound = Chunk::from_file(file_path).unwrap();
-        let idx = self.sounds.len();
-        self.sounds.push(sound);
+        self.chunks.push(sound);
 
-        idx
+        self.chunks.len() - 1
     }
 
     pub fn play_music(&mut self, idx: usize) {
@@ -71,8 +67,8 @@ impl AudioPlayer<'_> {
         music.play(-1).unwrap();
     }
 
-    pub fn play_sound(&self, idx: usize) {
-        let sound = &self.sounds[idx];
+    pub fn play_chunk(&self, idx: usize) {
+        let sound = &self.chunks[idx];
         let _ = Channel::all().play(sound, 0);
     }
 }

@@ -6,7 +6,6 @@ build = "build.rs"
 
 [dependencies]
 sdl2 = {version = "0.35.0", features = ["mixer"]}
-hound = "3.5.0"
 glow = "0.12.2"
 image = "0.24.6"
 fontdue = "0.7.3"
