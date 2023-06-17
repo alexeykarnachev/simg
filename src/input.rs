@@ -47,6 +47,10 @@ where
     pub fn is_just_pressed(&self, key: T) -> bool {
         self.just_pressed.get(&key).is_some()
     }
+
+    pub fn is_just_pressed_any(&self) -> bool {
+        self.just_pressed.len() > 0
+    }
 }
 
 impl<T> Default for KeyStates<T>

@@ -15,12 +15,35 @@ use simg::shapes::*;
 
 mod resources {
     pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
-    pub const MUSIC: &[u8] = include_bytes!("./assets/Shinrin-Yoku.ogg");
+    pub const FONT: &[u8] = include_bytes!(
+        "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
+    );
     pub const BOX_IMAGE: &[u8] = include_bytes!("./assets/box.png");
+    pub const MUSIC: &[u8] = include_bytes!("./assets/Shinrin-Yoku.ogg");
+    pub const SOUND_0: &[u8] = include_bytes!("./assets/key0.wav");
+    pub const SOUND_1: &[u8] = include_bytes!("./assets/key1.wav");
+}
+
+#[derive(Default)]
+struct Game {
+    music: usize,
+    sounds: Vec<usize>,
+    sound_idx: usize,
+}
+
+impl Game {
+    pub fn get_sound(&mut self) -> usize {
+        let sound = self.sounds[self.sound_idx];
+        self.sound_idx = (self.sound_idx + 1) % self.sounds.len();
+
+        sound
+    }
 }
 
 pub fn main() {
     use resources::*;
+
+    let mut game = Game::default();
 
     let width = 800.0;
     let height = 600.0;
@@ -35,12 +58,8 @@ pub fn main() {
 
     let tex = renderer.load_texture_from_image_bytes(BOX_IMAGE);
 
-    let font_bytes = include_bytes!(
-        "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
-    )
-    .as_slice();
     let font_size = 40;
-    let glyph_atlas = GlyphAtlas::new(font_bytes, font_size);
+    let glyph_atlas = GlyphAtlas::new(FONT, font_size);
     let glyph_tex = renderer.load_texture_from_glyph_atlas(&glyph_atlas);
 
     let mut camera = Camera2D::new(Vector2::new(0.0, 0.0));
@@ -54,15 +73,6 @@ pub fn main() {
     let mut update = move || {
         input.update();
         text.push_str(&input.text_input);
-
-        if !audio_player.is_initialized
-            && input.scancodes.is_just_pressed(Scancode::Space)
-        {
-            audio_player.init(&sdl2);
-            let music = audio_player.load_music_from_bytes(MUSIC);
-            audio_player.play_music(music);
-            println!("PLAY!");
-        }
 
         if input.scancodes.is_just_repeated(Scancode::Backspace) {
             text.pop();
@@ -136,6 +146,34 @@ pub fn main() {
         renderer.end_drawing(PRUSSIAN_BLUE, Some(&postfx_program));
 
         renderer.swap_window();
+
+        if input.keycodes.is_just_pressed_any()
+            && !audio_player.is_initialized
+        {
+            audio_player.init(&sdl2);
+            game.music = audio_player.load_music_from_bytes(MUSIC);
+
+            let mut reader = hound::WavReader::new(SOUND_0).unwrap();
+            println!("{:?}", reader.spec());
+            let foo = Vec::from_iter(
+                reader.samples::<i16>().map(|x| x.unwrap()),
+            );
+            game.sounds.push(audio_player.load_sound_from_bytes(&foo));
+
+            let mut reader = hound::WavReader::new(SOUND_1).unwrap();
+            println!("{:?}", reader.spec());
+            let foo = Vec::from_iter(
+                reader.samples::<i16>().map(|x| x.unwrap()),
+            );
+            game.sounds.push(audio_player.load_sound_from_bytes(&foo));
+            // audio_player.play_music(game.music);
+        }
+
+        if input.keycodes.is_just_pressed_any()
+            && audio_player.is_initialized
+        {
+            audio_player.play_sound(game.get_sound());
+        }
 
         return !input.should_quit;
     };
