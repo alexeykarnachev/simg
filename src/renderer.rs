@@ -497,9 +497,9 @@ impl Renderer {
         texcoords: Option<Rectangle>,
         color: Option<Color>,
     ) {
-        let positions = rect.to_triangles();
+        let positions = rect.get_triangles();
         let texcoords = if let Some(texcoords) = texcoords {
-            texcoords.to_triangles().map(|t| Some(t))
+            texcoords.get_triangles().map(|t| Some(t))
         } else {
             [None, None]
         };

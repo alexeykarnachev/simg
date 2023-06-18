@@ -77,6 +77,14 @@ impl Rectangle {
         self.top_right - self.bot_left
     }
 
+    pub fn get_width(&self) -> f32 {
+        self.top_right.x - self.bot_left.x
+    }
+
+    pub fn get_height(&self) -> f32 {
+        self.top_right.y - self.bot_left.y
+    }
+
     pub fn get_center_x(&self) -> f32 {
         (self.bot_left.x + self.top_right.x) / 2.0
     }
@@ -87,6 +95,14 @@ impl Rectangle {
 
     pub fn get_right_x(&self) -> f32 {
         self.top_right.x
+    }
+
+    pub fn get_top_y(&self) -> f32 {
+        self.top_right.y
+    }
+
+    pub fn get_bot_y(&self) -> f32 {
+        self.bot_left.y
     }
 
     pub fn get_bot_left(&self) -> Vector2<f32> {
@@ -183,7 +199,7 @@ impl Rectangle {
         }
     }
 
-    pub fn to_triangles(&self) -> [Triangle; 2] {
+    pub fn get_triangles(&self) -> [Triangle; 2] {
         [
             Triangle::new(
                 self.get_top_left(),
@@ -197,6 +213,15 @@ impl Rectangle {
             ),
         ]
     }
+
+    pub fn get_vertices(&self) -> [Vector2<f32>; 4] {
+        [
+            self.get_bot_left(),
+            self.get_bot_right(),
+            self.get_top_right(),
+            self.get_top_left(),
+        ]
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -208,6 +233,22 @@ pub struct Circle {
 impl Circle {
     pub fn new(center: Vector2<f32>, radius: f32) -> Self {
         Self { center, radius }
+    }
+
+    pub fn get_left_x(&self) -> f32 {
+        self.center.x - self.radius
+    }
+
+    pub fn get_right_x(&self) -> f32 {
+        self.center.x + self.radius
+    }
+
+    pub fn get_top_y(&self) -> f32 {
+        self.center.y + self.radius
+    }
+
+    pub fn get_bot_y(&self) -> f32 {
+        self.center.y - self.radius
     }
 
     pub fn from_bot(bot: Vector2<f32>, radius: f32) -> Self {

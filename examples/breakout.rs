@@ -4,9 +4,9 @@
 use core::f32::consts::PI;
 use nalgebra::Vector2;
 use rand::Rng;
-use resources::POSTFX_FRAG_SRC;
-use sdl2::keyboard::{Keycode, Scancode};
+use sdl2::keyboard::Keycode;
 use simg::color::*;
+use simg::geometry::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
 use simg::program::Program;
@@ -16,6 +16,8 @@ use simg::renderer::*;
 use simg::shapes::*;
 use std::ops::Add;
 use std::time::Instant;
+
+const GAME_DT: f32 = 0.005;
 
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
@@ -39,17 +41,15 @@ const BLOCK_FRAME_THICKNESS: f32 = 1.0;
 const PADDLE_WIDTH: f32 = CELL_WIDTH * 2.0;
 const PADDLE_HEIGHT: f32 = CELL_HEIGHT;
 const PADDLE_ELEVATION: f32 = CELL_HEIGHT * 6.0;
-const PADDLE_SPEED: f32 = 200.0;
+const PADDLE_SPEED: f32 = 600.0;
 
 const BALL_RADIUS: f32 = 8.0;
-const INIT_BALL_SPEED: f32 = 300.0;
+const INIT_BALL_SPEED: f32 = 500.0;
 
-mod resources {
-    pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
-    pub const FONT: &[u8] = include_bytes!(
-        "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
-    );
-}
+pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
+pub const FONT: &[u8] = include_bytes!(
+    "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
+);
 
 struct Block {
     rect: Rectangle,
@@ -92,7 +92,6 @@ enum State {
 }
 
 struct Game {
-    dt: f32,
     prev_upd_time: Instant,
     should_quit: bool,
 
@@ -118,8 +117,6 @@ struct Game {
 
 impl Game {
     pub fn new() -> Self {
-        use resources::*;
-
         let sdl2 = sdl2::init().unwrap();
         let input = Input::new(&sdl2);
         let mut renderer = Renderer::new(
@@ -178,7 +175,6 @@ impl Game {
         }
 
         Self {
-            dt: 0.0,
             prev_upd_time: Instant::now(),
             should_quit: false,
             input,
@@ -200,7 +196,15 @@ impl Game {
 
     pub fn update(&mut self) {
         self.update_input();
-        self.update_world();
+
+        let mut dt =
+            self.prev_upd_time.elapsed().as_nanos() as f32 / 1.0e9;
+        while dt > 0.0 {
+            self.update_game(dt.min(GAME_DT));
+            dt -= GAME_DT;
+        }
+        self.prev_upd_time = Instant::now();
+
         self.update_renderer();
     }
 
@@ -209,23 +213,26 @@ impl Game {
         self.should_quit |= self.input.should_quit;
     }
 
-    fn update_world(&mut self) {
+    fn update_game(&mut self, dt: f32) {
         use Keycode::*;
         use State::*;
 
-        self.dt = self.prev_upd_time.elapsed().as_nanos() as f32 / 1.0e9;
+        let field_left_x = self.field.get_left_x();
+        let field_right_x = self.field.get_right_x();
+        let field_bot_y = self.field.get_bot_y();
+        let field_top_y = self.field.get_top_y();
+        let paddle_left_x = self.paddle.get_left_x();
+        let paddle_right_x = self.paddle.get_right_x();
+        let paddle_bot_y = self.paddle.get_bot_y();
+        let paddle_top_y = self.paddle.get_top_y();
 
         if self.state != Finished {
             if self.input.keycodes.is_pressed(Right) {
-                self.paddle.translate_x_assign(PADDLE_SPEED * self.dt);
+                self.paddle.translate_x_assign(PADDLE_SPEED * dt);
             } else if self.input.keycodes.is_pressed(Left) {
-                self.paddle.translate_x_assign(-PADDLE_SPEED * self.dt);
+                self.paddle.translate_x_assign(-PADDLE_SPEED * dt);
             }
 
-            let paddle_left_x = self.paddle.get_left_x();
-            let paddle_right_x = self.paddle.get_right_x();
-            let field_left_x = self.field.get_left_x();
-            let field_right_x = self.field.get_right_x();
             if paddle_left_x < field_left_x {
                 self.paddle
                     .translate_x_assign(field_left_x - paddle_left_x);
@@ -245,10 +252,60 @@ impl Game {
                 Vector2::new(angle.cos(), angle.sin()) * self.ball_speed;
         }
 
-        let step = self.ball_velocity * self.dt;
-        self.ball.center += step;
+        if self.state != NotStarted {
+            let step = self.ball_velocity * dt;
+            self.ball.center += step;
 
-        self.prev_upd_time = Instant::now();
+            let ball_left_x = self.ball.get_left_x();
+            let ball_right_x = self.ball.get_right_x();
+            let ball_top_y = self.ball.get_top_y();
+            let ball_bot_y = self.ball.get_bot_y();
+            if let Some(mtv) =
+                get_circle_rectangle_mtv(&self.ball, &self.paddle)
+            {
+                self.ball.center += mtv;
+                let k = (self.ball.center.x - paddle_left_x)
+                    / (paddle_right_x - paddle_left_x);
+                let angle = if self.ball.center.y >= paddle_bot_y {
+                    PI * (0.75 - 0.5 * k)
+                } else {
+                    PI * (0.5 * k - 0.75)
+                };
+                self.ball_velocity =
+                    Vector2::new(angle.cos(), angle.sin())
+                        * self.ball_speed;
+            } else if ball_left_x < field_left_x {
+                self.ball_velocity = reflect(&self.ball_velocity, &RIGHT);
+                self.ball.center.x = field_left_x + self.ball.radius;
+            } else if ball_right_x > field_right_x {
+                self.ball_velocity = reflect(&self.ball_velocity, &LEFT);
+                self.ball.center.x = field_right_x - self.ball.radius;
+            } else if ball_bot_y < field_bot_y {
+                self.ball_velocity = reflect(&self.ball_velocity, &UP);
+                self.ball.center.y = field_bot_y + self.ball.radius;
+            } else if ball_top_y > field_top_y {
+                self.ball_velocity = reflect(&self.ball_velocity, &DOWN);
+                self.ball.center.y = field_top_y - self.ball.radius;
+            }
+
+            self.ball_velocity =
+                self.ball_velocity.normalize() * self.ball_speed;
+        }
+
+        if self.state == Started {
+            for block in self.blocks.iter_mut().filter(|b| b.is_alive) {
+                if let Some(mtv) =
+                    get_circle_rectangle_mtv(&self.ball, &block.rect)
+                {
+                    self.ball.center += mtv;
+                    self.ball_velocity =
+                        reflect(&self.ball_velocity, &mtv);
+                    self.scores += block.score;
+                    block.is_alive = false;
+                    break;
+                }
+            }
+        }
     }
 
     fn update_renderer(&mut self) {
@@ -269,7 +326,7 @@ impl Game {
             self.renderer.draw_glyph(glyph, Some(WHITE.with_alpha(0.0)));
         }
 
-        for block in self.blocks.iter() {
+        for block in self.blocks.iter().filter(|b| b.is_alive) {
             self.renderer.draw_rect(
                 block.draw_rect,
                 None,
