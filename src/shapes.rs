@@ -57,10 +57,10 @@ pub struct Rectangle {
 
 impl Rectangle {
     pub fn translate(&self, translation: &Vector2<f32>) -> Rectangle {
-        Rectangle {
-            bot_left: self.bot_left + translation,
-            top_right: self.top_right + translation,
-        }
+        let mut rect = *self;
+        rect.translate_assign(translation);
+
+        rect
     }
 
     pub fn translate_assign(&mut self, translation: &Vector2<f32>) {
@@ -68,8 +68,25 @@ impl Rectangle {
         self.top_right.add_assign(translation);
     }
 
+    pub fn translate_x_assign(&mut self, translation: f32) {
+        self.bot_left.x += translation;
+        self.top_right.x += translation;
+    }
+
     pub fn get_size(&self) -> Vector2<f32> {
         self.top_right - self.bot_left
+    }
+
+    pub fn get_center_x(&self) -> f32 {
+        (self.bot_left.x + self.top_right.x) / 2.0
+    }
+
+    pub fn get_left_x(&self) -> f32 {
+        self.bot_left.x
+    }
+
+    pub fn get_right_x(&self) -> f32 {
+        self.top_right.x
     }
 
     pub fn get_bot_left(&self) -> Vector2<f32> {

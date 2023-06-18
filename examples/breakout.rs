@@ -1,8 +1,11 @@
 #![allow(unused_variables)]
 #![allow(unused_mut)]
 
+use core::f32::consts::PI;
 use nalgebra::Vector2;
+use rand::Rng;
 use resources::POSTFX_FRAG_SRC;
+use sdl2::keyboard::{Keycode, Scancode};
 use simg::color::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
@@ -36,9 +39,10 @@ const BLOCK_FRAME_THICKNESS: f32 = 1.0;
 const PADDLE_WIDTH: f32 = CELL_WIDTH * 2.0;
 const PADDLE_HEIGHT: f32 = CELL_HEIGHT;
 const PADDLE_ELEVATION: f32 = CELL_HEIGHT * 6.0;
+const PADDLE_SPEED: f32 = 200.0;
 
 const BALL_RADIUS: f32 = 8.0;
-const INIT_BALL_SPEED: f32 = 100.0;
+const INIT_BALL_SPEED: f32 = 300.0;
 
 mod resources {
     pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
@@ -80,6 +84,13 @@ impl Block {
     }
 }
 
+#[derive(PartialEq)]
+enum State {
+    NotStarted,
+    Started,
+    Finished,
+}
+
 struct Game {
     dt: f32,
     prev_upd_time: Instant,
@@ -101,6 +112,7 @@ struct Game {
     ball_speed: f32,
     ball_velocity: Vector2<f32>,
 
+    state: State,
     scores: u32,
 }
 
@@ -137,7 +149,7 @@ impl Game {
             Vector2::new(PADDLE_WIDTH, PADDLE_HEIGHT),
         );
 
-        let ball = Circle::from_bot(paddle.get_top_center(), BALL_RADIUS);
+        let ball = Circle::from_bot(field.get_center(), BALL_RADIUS);
 
         let mut blocks = Vec::with_capacity(112);
         for i in 0..112 {
@@ -181,6 +193,7 @@ impl Game {
             ball,
             ball_speed: INIT_BALL_SPEED,
             ball_velocity: Vector2::zeros(),
+            state: State::NotStarted,
             scores: 0,
         }
     }
@@ -197,7 +210,44 @@ impl Game {
     }
 
     fn update_world(&mut self) {
+        use Keycode::*;
+        use State::*;
+
         self.dt = self.prev_upd_time.elapsed().as_nanos() as f32 / 1.0e9;
+
+        if self.state != Finished {
+            if self.input.keycodes.is_pressed(Right) {
+                self.paddle.translate_x_assign(PADDLE_SPEED * self.dt);
+            } else if self.input.keycodes.is_pressed(Left) {
+                self.paddle.translate_x_assign(-PADDLE_SPEED * self.dt);
+            }
+
+            let paddle_left_x = self.paddle.get_left_x();
+            let paddle_right_x = self.paddle.get_right_x();
+            let field_left_x = self.field.get_left_x();
+            let field_right_x = self.field.get_right_x();
+            if paddle_left_x < field_left_x {
+                self.paddle
+                    .translate_x_assign(field_left_x - paddle_left_x);
+            } else if paddle_right_x > field_right_x {
+                self.paddle
+                    .translate_x_assign(field_right_x - paddle_right_x);
+            }
+        }
+
+        if self.state == NotStarted
+            && self.input.keycodes.is_just_pressed(Space)
+        {
+            self.state = Started;
+            let mut rng = rand::thread_rng();
+            let angle = -PI / 2.0 + rng.gen_range(-PI / 5.0..=PI / 5.0);
+            self.ball_velocity =
+                Vector2::new(angle.cos(), angle.sin()) * self.ball_speed;
+        }
+
+        let step = self.ball_velocity * self.dt;
+        self.ball.center += step;
+
         self.prev_upd_time = Instant::now();
     }
 

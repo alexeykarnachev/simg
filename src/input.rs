@@ -40,6 +40,10 @@ where
         }
     }
 
+    pub fn is_pressed(&self, key: T) -> bool {
+        self.pressed.get(&key).is_some()
+    }
+
     pub fn is_just_repeated(&self, key: T) -> bool {
         self.just_repeated.get(&key).is_some()
     }
