@@ -4,12 +4,13 @@
 use nalgebra::Vector2;
 use resources::POSTFX_FRAG_SRC;
 use simg::color::*;
+use simg::glyph_atlas::*;
 use simg::input::*;
 use simg::program::Program;
 use simg::program::ProgramArg::ColorArg;
 use simg::renderer::Projection::*;
 use simg::renderer::*;
-use simg::shapes::Rectangle;
+use simg::shapes::*;
 use std::ops::Add;
 use std::time::Instant;
 
@@ -32,9 +33,12 @@ const CELL_HEIGHT: f32 = FIELD_HEIGHT / N_CELLS_Y as f32;
 
 const BLOCK_FRAME_THICKNESS: f32 = 1.0;
 
-const PLAYER_WIDTH: f32 = CELL_WIDTH * 2.0;
-const PLAYER_HEIGHT: f32 = CELL_HEIGHT;
-const PLAYER_ELEVATION: f32 = CELL_HEIGHT * 6.0;
+const PADDLE_WIDTH: f32 = CELL_WIDTH * 2.0;
+const PADDLE_HEIGHT: f32 = CELL_HEIGHT;
+const PADDLE_ELEVATION: f32 = CELL_HEIGHT * 6.0;
+
+const BALL_RADIUS: f32 = 8.0;
+const INIT_BALL_SPEED: f32 = 100.0;
 
 mod resources {
     pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
@@ -76,25 +80,6 @@ impl Block {
     }
 }
 
-struct Player {
-    pos: Vector2<f32>,
-    rect: Rectangle,
-}
-
-impl Player {
-    pub fn new(pos: Vector2<f32>) -> Self {
-        let size = Vector2::new(PLAYER_WIDTH, PLAYER_HEIGHT);
-        Self {
-            pos,
-            rect: Rectangle::from_bot_center(Vector2::zeros(), size),
-        }
-    }
-
-    pub fn get_rect(&self) -> Rectangle {
-        self.rect.translate(&self.pos)
-    }
-}
-
 struct Game {
     dt: f32,
     prev_upd_time: Instant,
@@ -102,17 +87,27 @@ struct Game {
 
     input: Input,
     renderer: Renderer,
+    glyph_atlas: GlyphAtlas,
+    glyph_tex: u32,
     postfx: Program,
 
     frame: Rectangle,
     field: Rectangle,
 
     blocks: Vec<Block>,
-    player: Player,
+    paddle: Rectangle,
+
+    ball: Circle,
+    ball_speed: f32,
+    ball_velocity: Vector2<f32>,
+
+    scores: u32,
 }
 
 impl Game {
     pub fn new() -> Self {
+        use resources::*;
+
         let sdl2 = sdl2::init().unwrap();
         let input = Input::new(&sdl2);
         let mut renderer = Renderer::new(
@@ -121,6 +116,11 @@ impl Game {
             WINDOW_WIDTH as u32,
             WINDOW_HEIGHT as u32,
         );
+
+        let glyph_atlas = GlyphAtlas::new(FONT, 48);
+        let glyph_tex =
+            renderer.load_texture_from_glyph_atlas(&glyph_atlas);
+
         let postfx = renderer.load_screen_rect_program(POSTFX_FRAG_SRC);
         let field = Rectangle::from_center(
             Vector2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0),
@@ -130,11 +130,14 @@ impl Game {
             field.get_center(),
             Vector2::new(FIELD_FRAME_WIDTH, FIELD_FRAME_HEIGHT),
         );
-        let player = Player::new(
+        let paddle = Rectangle::from_bot_center(
             field
                 .get_bot_center()
-                .add(Vector2::new(0.0, PLAYER_ELEVATION)),
+                .add(Vector2::new(0.0, PADDLE_ELEVATION)),
+            Vector2::new(PADDLE_WIDTH, PADDLE_HEIGHT),
         );
+
+        let ball = Circle::from_bot(paddle.get_top_center(), BALL_RADIUS);
 
         let mut blocks = Vec::with_capacity(112);
         for i in 0..112 {
@@ -168,11 +171,17 @@ impl Game {
             should_quit: false,
             input,
             renderer,
+            glyph_atlas,
+            glyph_tex,
             postfx,
             frame,
             field,
             blocks,
-            player,
+            paddle,
+            ball,
+            ball_speed: INIT_BALL_SPEED,
+            ball_velocity: Vector2::zeros(),
+            scores: 0,
         }
     }
 
@@ -193,12 +202,22 @@ impl Game {
     }
 
     fn update_renderer(&mut self) {
-        self.renderer.start_new_batch(ProjScreen, None);
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex));
 
         self.renderer.draw_rect(self.frame, None, Some(WHITE));
         self.renderer.draw_rect(self.field, None, Some(BLACK));
-        self.renderer
-            .draw_rect(self.player.get_rect(), None, Some(WHITE));
+        self.renderer.draw_rect(self.paddle, None, Some(WHITE));
+        self.renderer.draw_circle(self.ball, None, Some(WHITE));
+
+        let mut scores_pos = self.field.get_top_right();
+        scores_pos.x -= 90.0;
+        scores_pos.y -= 50.0;
+        let scores = format!("{:03}", self.scores);
+        for glyph in self.glyph_atlas.iter_text_glyphs(scores_pos, &scores)
+        {
+            self.renderer.draw_glyph(glyph, Some(WHITE.with_alpha(0.0)));
+        }
 
         for block in self.blocks.iter() {
             self.renderer.draw_rect(

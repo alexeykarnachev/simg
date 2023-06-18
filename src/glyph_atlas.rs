@@ -144,4 +144,17 @@ impl GlyphAtlas {
 
         glyph
     }
+
+    pub fn iter_text_glyphs<'a>(
+        &'a self,
+        mut cursor: Vector2<f32>,
+        text: &'a str,
+    ) -> impl IntoIterator<Item = Glyph> + 'a {
+        text.chars().map(move |symbol| {
+            let glyph = self.get_glyph(&cursor, symbol);
+            cursor += glyph.advance;
+
+            glyph
+        })
+    }
 }

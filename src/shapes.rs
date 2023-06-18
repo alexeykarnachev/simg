@@ -2,11 +2,41 @@ use std::ops::AddAssign;
 
 use nalgebra::Vector2;
 
+pub const CIRCLE_N_TRIANGLES: usize = 16;
+const UNIT_CIRCLE_POINTS: [Vector2<f32>; CIRCLE_N_TRIANGLES] = [
+    Vector2::new(1.0, 0.0),
+    Vector2::new(0.9238795325112867, 0.3826834323650898),
+    Vector2::new(0.7071067811865475, 0.7071067811865476),
+    Vector2::new(0.38268343236508967, 0.9238795325112867),
+    Vector2::new(0.0, 1.0),
+    Vector2::new(-0.3826834323650898, 0.9238795325112867),
+    Vector2::new(-0.7071067811865476, 0.7071067811865475),
+    Vector2::new(-0.9238795325112867, 0.38268343236508967),
+    Vector2::new(-1.0, 0.0),
+    Vector2::new(-0.9238795325112867, -0.3826834323650898),
+    Vector2::new(-0.7071067811865475, -0.7071067811865476),
+    Vector2::new(-0.38268343236508967, -0.9238795325112867),
+    Vector2::new(0.0, -1.0),
+    Vector2::new(0.3826834323650898, -0.9238795325112867),
+    Vector2::new(0.7071067811865476, -0.7071067811865475),
+    Vector2::new(0.9238795325112867, -0.38268343236508967),
+];
+
 #[derive(Clone, Copy)]
 pub struct Triangle {
     pub a: Vector2<f32>,
     pub b: Vector2<f32>,
     pub c: Vector2<f32>,
+}
+
+impl Default for Triangle {
+    fn default() -> Self {
+        Self {
+            a: Vector2::zeros(),
+            b: Vector2::zeros(),
+            c: Vector2::zeros(),
+        }
+    }
 }
 
 impl Triangle {
@@ -55,6 +85,13 @@ impl Rectangle {
         center += (self.top_right - self.bot_left) / 2.0;
 
         center
+    }
+
+    pub fn get_top_center(&self) -> Vector2<f32> {
+        let mut top_center = self.top_right;
+        top_center.x -= (self.top_right.x - self.bot_left.x) / 2.0;
+
+        top_center
     }
 
     pub fn get_bot_center(&self) -> Vector2<f32> {
@@ -142,5 +179,39 @@ impl Rectangle {
                 self.get_bot_right(),
             ),
         ]
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Circle {
+    pub center: Vector2<f32>,
+    pub radius: f32,
+}
+
+impl Circle {
+    pub fn new(center: Vector2<f32>, radius: f32) -> Self {
+        Self { center, radius }
+    }
+
+    pub fn from_bot(bot: Vector2<f32>, radius: f32) -> Self {
+        let mut center = bot;
+        center.y += radius;
+
+        Self { center, radius }
+    }
+
+    pub fn to_triangles(&self) -> [Triangle; CIRCLE_N_TRIANGLES] {
+        let mut triangles =
+            [(); CIRCLE_N_TRIANGLES].map(|_| Triangle::default());
+
+        let a = self.center;
+        for i in 0..CIRCLE_N_TRIANGLES {
+            let j = (i + 1) % (CIRCLE_N_TRIANGLES);
+            let b = UNIT_CIRCLE_POINTS[j] * self.radius + a;
+            let c = UNIT_CIRCLE_POINTS[i] * self.radius + a;
+            triangles[i] = Triangle::new(a, b, c);
+        }
+
+        triangles
     }
 }

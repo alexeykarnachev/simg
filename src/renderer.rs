@@ -508,6 +508,24 @@ impl Renderer {
         self.draw_triangle(positions[1], texcoords[1], color);
     }
 
+    pub fn draw_circle(
+        &mut self,
+        circle: Circle,
+        texcoords: Option<Circle>,
+        color: Option<Color>,
+    ) {
+        let positions = circle.to_triangles();
+        let texcoords = if let Some(texcoords) = texcoords {
+            texcoords.to_triangles().map(|t| Some(t))
+        } else {
+            [None; CIRCLE_N_TRIANGLES]
+        };
+
+        for i in 0..CIRCLE_N_TRIANGLES {
+            self.draw_triangle(positions[i], texcoords[i], color);
+        }
+    }
+
     pub fn draw_glyph(&mut self, glyph: Glyph, color: Option<Color>) {
         self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
