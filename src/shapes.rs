@@ -26,9 +26,20 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
+    pub fn translate(&self, translation: &Vector2<f32>) -> Rectangle {
+        Rectangle {
+            bot_left: self.bot_left + translation,
+            top_right: self.top_right + translation,
+        }
+    }
+
     pub fn translate_assign(&mut self, translation: &Vector2<f32>) {
         self.bot_left.add_assign(translation);
         self.top_right.add_assign(translation);
+    }
+
+    pub fn get_size(&self) -> Vector2<f32> {
+        self.top_right - self.bot_left
     }
 
     pub fn get_bot_left(&self) -> Vector2<f32> {
@@ -37,6 +48,20 @@ impl Rectangle {
 
     pub fn get_top_right(&self) -> Vector2<f32> {
         self.top_right
+    }
+
+    pub fn get_center(&self) -> Vector2<f32> {
+        let mut center = self.bot_left;
+        center += (self.top_right - self.bot_left) / 2.0;
+
+        center
+    }
+
+    pub fn get_bot_center(&self) -> Vector2<f32> {
+        let mut bot_center = self.bot_left;
+        bot_center.x += (self.top_right.x - self.bot_left.x) / 2.0;
+
+        bot_center
     }
 
     pub fn get_bot_right(&self) -> Vector2<f32> {
@@ -53,13 +78,23 @@ impl Rectangle {
         top_left
     }
 
+    pub fn from_center(center: Vector2<f32>, size: Vector2<f32>) -> Self {
+        let mut bot_left = center;
+        bot_left -= size * 0.5;
+        let top_right = bot_left + size;
+
+        Self {
+            bot_left,
+            top_right,
+        }
+    }
+
     pub fn from_top_left(
         top_left: Vector2<f32>,
         size: Vector2<f32>,
     ) -> Self {
         let mut bot_left = top_left;
         bot_left.y -= size.y;
-
         let top_right = bot_left + size;
 
         Self {
@@ -73,6 +108,21 @@ impl Rectangle {
         size: Vector2<f32>,
     ) -> Self {
         let top_right = bot_left + size;
+
+        Self {
+            bot_left,
+            top_right,
+        }
+    }
+
+    pub fn from_bot_center(
+        bot_center: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let mut bot_left = bot_center;
+        bot_left.x -= 0.5 * size.x;
+        let top_right = bot_left + size;
+
         Self {
             bot_left,
             top_right,
