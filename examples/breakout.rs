@@ -93,8 +93,9 @@ enum State {
 }
 
 struct Game {
-    prev_upd_time: f64,
+    prev_ticks: u32,
     should_quit: bool,
+    timer: sdl2::TimerSubsystem,
 
     input: Input,
     renderer: Renderer,
@@ -118,6 +119,7 @@ struct Game {
 impl Game {
     pub fn new() -> Self {
         let sdl2 = sdl2::init().unwrap();
+        let timer = sdl2.timer().unwrap();
         let input = Input::new(&sdl2);
         let mut renderer = Renderer::new(
             &sdl2,
@@ -175,8 +177,9 @@ impl Game {
         }
 
         Self {
-            prev_upd_time: get_time(),
+            prev_ticks: timer.ticks(),
             should_quit: false,
+            timer,
             input,
             renderer,
             glyph_atlas,
@@ -197,12 +200,13 @@ impl Game {
     pub fn update(&mut self) {
         self.update_input();
 
-        let mut dt = (get_time() - self.prev_upd_time) as f32;
+        let mut dt =
+            (self.timer.ticks() - self.prev_ticks) as f32 / 1000.0;
         while dt > 0.0 {
             self.update_game(dt.min(GAME_DT));
             dt -= GAME_DT;
         }
-        self.prev_upd_time = get_time();
+        self.prev_ticks = self.timer.ticks();
 
         self.update_renderer();
     }
@@ -220,10 +224,6 @@ impl Game {
         let field_right_x = self.field.get_right_x();
         let field_bot_y = self.field.get_bot_y();
         let field_top_y = self.field.get_top_y();
-        let paddle_left_x = self.paddle.get_left_x();
-        let paddle_right_x = self.paddle.get_right_x();
-        let paddle_bot_y = self.paddle.get_bot_y();
-        let paddle_top_y = self.paddle.get_top_y();
 
         if self.state != Finished {
             if self.input.keycodes.is_pressed(Right) {
@@ -232,6 +232,8 @@ impl Game {
                 self.paddle.translate_x_assign(-PADDLE_SPEED * dt);
             }
 
+            let paddle_left_x = self.paddle.get_left_x();
+            let paddle_right_x = self.paddle.get_right_x();
             if paddle_left_x < field_left_x {
                 self.paddle
                     .translate_x_assign(field_left_x - paddle_left_x);
@@ -240,6 +242,11 @@ impl Game {
                     .translate_x_assign(field_right_x - paddle_right_x);
             }
         }
+
+        let paddle_left_x = self.paddle.get_left_x();
+        let paddle_right_x = self.paddle.get_right_x();
+        let paddle_bot_y = self.paddle.get_bot_y();
+        let paddle_top_y = self.paddle.get_top_y();
 
         if self.state == NotStarted
             && self.input.keycodes.is_just_pressed(Space)
@@ -339,26 +346,6 @@ impl Game {
         self.renderer.end_drawing(BLACK, None);
 
         self.renderer.swap_window();
-    }
-}
-
-fn get_time() -> f64 {
-    #[cfg(not(target_os = "emscripten"))]
-    {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let start = SystemTime::now();
-        let since_the_epoch = start
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
-        let time = since_the_epoch.as_secs_f64();
-        return time;
-    }
-
-    #[cfg(target_os = "emscripten")]
-    {
-        unsafe {
-            return emscripten_get_now() / 1000.0;
-        }
     }
 }
 
