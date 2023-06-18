@@ -6,6 +6,7 @@ use nalgebra::Vector2;
 use rand::Rng;
 use sdl2::keyboard::Keycode;
 use simg::color::*;
+use simg::emscripten::*;
 use simg::geometry::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
@@ -92,15 +93,14 @@ enum State {
 }
 
 struct Game {
-    prev_upd_time: Instant,
+    prev_upd_time: f64,
     should_quit: bool,
 
     input: Input,
     renderer: Renderer,
     glyph_atlas: GlyphAtlas,
     glyph_tex: u32,
-    postfx: Program,
-
+    // postfx: Program,
     frame: Rectangle,
     field: Rectangle,
 
@@ -130,7 +130,7 @@ impl Game {
         let glyph_tex =
             renderer.load_texture_from_glyph_atlas(&glyph_atlas);
 
-        let postfx = renderer.load_screen_rect_program(POSTFX_FRAG_SRC);
+        // let postfx = renderer.load_screen_rect_program(POSTFX_FRAG_SRC);
         let field = Rectangle::from_center(
             Vector2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0),
             Vector2::new(FIELD_WIDTH, FIELD_HEIGHT),
@@ -175,13 +175,13 @@ impl Game {
         }
 
         Self {
-            prev_upd_time: Instant::now(),
+            prev_upd_time: get_time(),
             should_quit: false,
             input,
             renderer,
             glyph_atlas,
             glyph_tex,
-            postfx,
+            // postfx,
             frame,
             field,
             blocks,
@@ -197,13 +197,12 @@ impl Game {
     pub fn update(&mut self) {
         self.update_input();
 
-        let mut dt =
-            self.prev_upd_time.elapsed().as_nanos() as f32 / 1.0e9;
+        let mut dt = (get_time() - self.prev_upd_time) as f32;
         while dt > 0.0 {
             self.update_game(dt.min(GAME_DT));
             dt -= GAME_DT;
         }
-        self.prev_upd_time = Instant::now();
+        self.prev_upd_time = get_time();
 
         self.update_renderer();
     }
@@ -334,11 +333,32 @@ impl Game {
             );
         }
 
-        self.postfx
-            .set_arg("u_color", ColorArg(Color::new(0.0, 0.0, 0.0, 1.0)));
-        self.renderer.end_drawing(BLACK, Some(&self.postfx));
+        // self.postfx
+        //     .set_arg("u_color", ColorArg(Color::new(0.0, 0.0, 0.0, 1.0)));
+        // self.renderer.end_drawing(BLACK, Some(&self.postfx));
+        self.renderer.end_drawing(BLACK, None);
 
         self.renderer.swap_window();
+    }
+}
+
+fn get_time() -> f64 {
+    #[cfg(not(target_os = "emscripten"))]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let start = SystemTime::now();
+        let since_the_epoch = start
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
+        let time = since_the_epoch.as_secs_f64();
+        return time;
+    }
+
+    #[cfg(target_os = "emscripten")]
+    {
+        unsafe {
+            return emscripten_get_now() / 1000.0;
+        }
     }
 }
 
@@ -358,7 +378,6 @@ pub fn main() {
 
     #[cfg(target_os = "emscripten")]
     {
-        use simg::emscripten::*;
         set_main_loop_callback(move || {
             update();
         });

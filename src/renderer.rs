@@ -90,7 +90,9 @@ impl Program {
 
         unsafe {
             for (name, arg) in self.args.iter() {
-                let loc = gl.get_uniform_location(program, name).unwrap();
+                let loc = gl.get_uniform_location(program, name).expect(
+                    &format!("Program should have {} uniform", name),
+                );
                 match arg {
                     FloatArg(val) => {
                         gl.uniform_1_f32(Some(&loc), *val);
