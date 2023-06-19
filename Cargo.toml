@@ -11,7 +11,6 @@ image = "0.24.6"
 fontdue = "0.7.3"
 nalgebra = "0.32.2"
 rand = "0.8.5"
-instant = "0.1"
 
 [build-dependencies]
 gl_generator = "0.14.0"

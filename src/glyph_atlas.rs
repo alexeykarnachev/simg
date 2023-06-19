@@ -1,3 +1,4 @@
+use crate::common::Pivot;
 use crate::shapes::Rectangle;
 use fontdue;
 use nalgebra::Vector2;
@@ -133,7 +134,26 @@ impl GlyphAtlas {
         }
     }
 
-    pub fn get_glyph(&self, cursor: &Vector2<f32>, symbol: char) -> Glyph {
+    fn get_text_size(&self, text: &str) -> Vector2<f32> {
+        let pivot = Pivot::BotLeft(Vector2::zeros());
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for glyph in self.iter_text_glyphs(pivot, text) {
+            min_x = min_x.min(glyph.rect.get_min_x());
+            max_x = max_x.max(glyph.rect.get_max_x());
+            min_y = min_y.min(glyph.rect.get_min_y());
+            max_y = max_y.max(glyph.rect.get_max_y());
+        }
+
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+
+        Vector2::new(width, height)
+    }
+
+    fn get_glyph(&self, cursor: &Vector2<f32>, symbol: char) -> Glyph {
         let mut idx = symbol as usize;
         if idx < 32 || idx > 126 {
             idx = 63; // Question mark
@@ -147,9 +167,19 @@ impl GlyphAtlas {
 
     pub fn iter_text_glyphs<'a>(
         &'a self,
-        mut cursor: Vector2<f32>,
+        pivot: Pivot,
         text: &'a str,
     ) -> impl IntoIterator<Item = Glyph> + 'a {
+        use Pivot::*;
+
+        let mut cursor = match pivot {
+            BotLeft(pos) => pos,
+            Center(pos) => pos - self.get_text_size(text) * 0.5,
+            _ => {
+                todo!()
+            }
+        };
+
         text.chars().map(move |symbol| {
             let glyph = self.get_glyph(&cursor, symbol);
             cursor += glyph.advance;

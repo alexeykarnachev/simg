@@ -12,7 +12,11 @@ void main() {
     vec4 color = vs_color;
 
     if (u_use_tex == UTRUE) {
-        color += texture(u_tex, vs_texcoord);
+        vec4 tex_color = texture(u_tex, vs_texcoord); 
+        color.r += tex_color.r;
+        color.g += tex_color.g;
+        color.b += tex_color.b;
+        color.a *= tex_color.a;
     }
 
     fs_color = color;

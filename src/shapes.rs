@@ -56,6 +56,13 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
+    pub fn zeros() -> Self {
+        Self {
+            bot_left: Vector2::zeros(),
+            top_right: Vector2::zeros(),
+        }
+    }
+
     pub fn translate(&self, translation: &Vector2<f32>) -> Rectangle {
         let mut rect = *self;
         rect.translate_assign(translation);
@@ -89,19 +96,19 @@ impl Rectangle {
         (self.bot_left.x + self.top_right.x) / 2.0
     }
 
-    pub fn get_left_x(&self) -> f32 {
+    pub fn get_min_x(&self) -> f32 {
         self.bot_left.x
     }
 
-    pub fn get_right_x(&self) -> f32 {
+    pub fn get_max_x(&self) -> f32 {
         self.top_right.x
     }
 
-    pub fn get_top_y(&self) -> f32 {
+    pub fn get_max_y(&self) -> f32 {
         self.top_right.y
     }
 
-    pub fn get_bot_y(&self) -> f32 {
+    pub fn get_min_y(&self) -> f32 {
         self.bot_left.y
     }
 
@@ -231,23 +238,57 @@ pub struct Circle {
 }
 
 impl Circle {
+    pub fn zeros() -> Self {
+        Self {
+            center: Vector2::zeros(),
+            radius: 0.0,
+        }
+    }
     pub fn new(center: Vector2<f32>, radius: f32) -> Self {
         Self { center, radius }
     }
 
-    pub fn get_left_x(&self) -> f32 {
+    pub fn get_left(&self) -> Vector2<f32> {
+        let mut left = self.center;
+        left.x -= self.radius;
+
+        left
+    }
+
+    pub fn get_right(&self) -> Vector2<f32> {
+        let mut right = self.center;
+        right.x += self.radius;
+
+        right
+    }
+
+    pub fn get_top(&self) -> Vector2<f32> {
+        let mut top = self.center;
+        top.y += self.radius;
+
+        top
+    }
+
+    pub fn get_bot(&self) -> Vector2<f32> {
+        let mut bot = self.center;
+        bot.y -= self.radius;
+
+        bot
+    }
+
+    pub fn get_min_x(&self) -> f32 {
         self.center.x - self.radius
     }
 
-    pub fn get_right_x(&self) -> f32 {
+    pub fn get_max_x(&self) -> f32 {
         self.center.x + self.radius
     }
 
-    pub fn get_top_y(&self) -> f32 {
+    pub fn get_max_y(&self) -> f32 {
         self.center.y + self.radius
     }
 
-    pub fn get_bot_y(&self) -> f32 {
+    pub fn get_min_y(&self) -> f32 {
         self.center.y - self.radius
     }
 
