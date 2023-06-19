@@ -453,8 +453,6 @@ impl Game {
         }
 
         // Draw postfx and end drawing
-        self.postfx
-            .set_arg("u_color", ColorArg(Color::new(0.1, 0.1, 0.0, 1.0)));
         self.renderer.end_drawing(BLACK, Some(&self.postfx));
 
         self.renderer.swap_window();
