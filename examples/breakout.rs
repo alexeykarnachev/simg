@@ -21,15 +21,20 @@ const GAME_DT: f32 = 0.005;
 
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
+const WINDOW_CENTER: Vector2<f32> =
+    Vector2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0);
 
 const FIELD_ASPECT: f32 = 0.75;
 const FIELD_HEIGHT: f32 = 580.0;
 const FIELD_WIDTH: f32 = FIELD_HEIGHT * FIELD_ASPECT;
+const FIELD_SIZE: Vector2<f32> = Vector2::new(FIELD_WIDTH, FIELD_HEIGHT);
 
 const FIELD_FRAME_THICKNESS: f32 =
     (WINDOW_HEIGHT - FIELD_HEIGHT - 5.0) / 2.0;
 const FIELD_FRAME_WIDTH: f32 = FIELD_WIDTH + FIELD_FRAME_THICKNESS * 2.0;
 const FIELD_FRAME_HEIGHT: f32 = FIELD_HEIGHT + FIELD_FRAME_THICKNESS * 2.0;
+const FIELD_FRAME_SIZE: Vector2<f32> =
+    Vector2::new(FIELD_FRAME_WIDTH, FIELD_FRAME_HEIGHT);
 
 const N_CELLS_X: usize = 14;
 const N_CELLS_Y: usize = 54;
@@ -41,6 +46,8 @@ const BLOCK_DEATH_ANIM_TIME: f32 = 0.15;
 
 const PADDLE_WIDTH: f32 = CELL_WIDTH * 2.0;
 const PADDLE_HEIGHT: f32 = CELL_HEIGHT;
+const PADDLE_SIZE: Vector2<f32> =
+    Vector2::new(PADDLE_WIDTH, PADDLE_HEIGHT);
 const PADDLE_ELEVATION: f32 = CELL_HEIGHT * 6.0;
 const PADDLE_SPEED: f32 = 600.0;
 
@@ -95,6 +102,7 @@ impl Block {
     }
 }
 
+#[derive(Debug)]
 struct Ball {
     circle: Circle,
     speed: f32,
@@ -118,7 +126,6 @@ impl Ball {
 enum State {
     NotStarted,
     Started,
-    GameOver,
 }
 
 struct Game {
@@ -129,8 +136,12 @@ struct Game {
 
     input: Input,
     renderer: Renderer,
-    glyph_atlas: GlyphAtlas,
-    glyph_tex: u32,
+
+    glyph_atlas_large: GlyphAtlas,
+    glyph_tex_large: u32,
+    glyph_atlas_small: GlyphAtlas,
+    glyph_tex_small: u32,
+
     postfx: Program,
     frame: Rectangle,
     field: Rectangle,
@@ -141,7 +152,6 @@ struct Game {
 
     state: State,
     scores: u32,
-    game_over_time: f32,
 }
 
 impl Game {
@@ -156,9 +166,12 @@ impl Game {
             WINDOW_HEIGHT as u32,
         );
 
-        let glyph_atlas = GlyphAtlas::new(FONT, 48);
-        let glyph_tex =
-            renderer.load_texture_from_glyph_atlas(&glyph_atlas);
+        let glyph_atlas_large = GlyphAtlas::new(FONT, 48);
+        let glyph_tex_large =
+            renderer.load_texture_from_glyph_atlas(&glyph_atlas_large);
+        let glyph_atlas_small = GlyphAtlas::new(FONT, 24);
+        let glyph_tex_small =
+            renderer.load_texture_from_glyph_atlas(&glyph_atlas_small);
 
         let postfx = renderer.load_screen_rect_program(POSTFX_FRAG_SRC);
 
@@ -169,8 +182,10 @@ impl Game {
             should_quit: false,
             input,
             renderer,
-            glyph_atlas,
-            glyph_tex,
+            glyph_atlas_large,
+            glyph_tex_large,
+            glyph_atlas_small,
+            glyph_tex_small,
             postfx,
             frame: Rectangle::zeros(),
             field: Rectangle::zeros(),
@@ -179,24 +194,18 @@ impl Game {
             ball: Ball::new(Vector2::zeros()),
             state: State::NotStarted,
             scores: 0,
-            game_over_time: 0.0,
         }
     }
 
     pub fn reset(&mut self) {
-        let field = Rectangle::from_center(
-            Vector2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0),
-            Vector2::new(FIELD_WIDTH, FIELD_HEIGHT),
-        );
-        let frame = Rectangle::from_center(
-            field.get_center(),
-            Vector2::new(FIELD_FRAME_WIDTH, FIELD_FRAME_HEIGHT),
-        );
+        let field = Rectangle::from_center(WINDOW_CENTER, FIELD_SIZE);
+        let frame =
+            Rectangle::from_center(WINDOW_CENTER, FIELD_FRAME_SIZE);
         let paddle = Rectangle::from_bot_center(
             field
                 .get_bot_center()
                 .add(Vector2::new(0.0, PADDLE_ELEVATION)),
-            Vector2::new(PADDLE_WIDTH, PADDLE_HEIGHT),
+            PADDLE_SIZE,
         );
 
         let ball = Ball::new(field.get_center());
@@ -217,6 +226,7 @@ impl Game {
             blocks.push(block);
         }
 
+        self.time = 0.0;
         self.frame = frame;
         self.field = field;
         self.blocks = blocks;
@@ -224,7 +234,6 @@ impl Game {
         self.ball = ball;
         self.state = State::NotStarted;
         self.scores = 0;
-        self.game_over_time = 0.0;
     }
 
     pub fn update(&mut self) {
@@ -259,9 +268,6 @@ impl Game {
                 self.update_ball(dt);
                 self.update_blocks();
             }
-            GameOver => {
-                self.update_game_over(dt);
-            }
         };
     }
 
@@ -269,6 +275,10 @@ impl Game {
         use Keycode::*;
 
         if self.input.keycodes.is_just_pressed(Space) {
+            if self.ball.death_time.is_some() {
+                self.reset();
+            }
+
             self.state = State::Started;
             let mut rng = rand::thread_rng();
             let angle = -PI / 2.0 + rng.gen_range(-PI / 5.0..=PI / 5.0);
@@ -331,8 +341,8 @@ impl Game {
             self.ball.circle.center.y =
                 field_max_y - self.ball.circle.radius;
         } else if ball_min_y < field_min_y {
-            self.state = State::GameOver;
             self.ball.death_time = Some(self.time);
+            self.state = State::NotStarted;
         }
 
         if let Some(mtv) =
@@ -370,29 +380,31 @@ impl Game {
         }
     }
 
-    fn update_game_over(&mut self, dt: f32) {
-        use Keycode::*;
-
-        if self.input.keycodes.is_just_pressed(Space) {
-            self.reset();
-        }
-
-        self.game_over_time += dt;
-    }
-
     fn update_renderer(&mut self) {
+        // Draw objects and playing filed (w/o texture)
         self.renderer.start_new_batch(ProjScreen, None);
         self.renderer.draw_rect(self.frame, None, Some(WHITE));
         self.renderer.draw_rect(self.field, None, Some(BLACK));
         self.renderer.draw_rect(self.paddle, None, Some(WHITE));
         self.draw_ball();
         self.draw_blocks();
+
+        // Draw large texts:
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_large));
+        if let Some(death_time) = self.ball.death_time {
+            self.draw_game_over(death_time);
+        }
         self.draw_scores();
 
-        if self.state == State::GameOver {
-            self.draw_game_over();
+        // Draw small texts
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        if self.state != State::Started {
+            self.draw_press_space();
         }
 
+        // Draw postfx and end drawing
         self.postfx
             .set_arg("u_color", ColorArg(Color::new(0.1, 0.1, 0.0, 1.0)));
         self.renderer.end_drawing(BLACK, Some(&self.postfx));
@@ -452,26 +464,41 @@ impl Game {
     }
 
     fn draw_scores(&mut self) {
-        self.renderer
-            .start_new_batch(ProjScreen, Some(self.glyph_tex));
         let mut scores_pos = self.field.get_top_right();
         scores_pos.x -= 90.0;
         scores_pos.y -= 50.0;
         let scores = format!("{:03}", self.scores);
         for glyph in self
-            .glyph_atlas
+            .glyph_atlas_large
             .iter_text_glyphs(Pivot::BotLeft(scores_pos), &scores)
         {
             self.renderer.draw_glyph(glyph, Some(WHITE.with_alpha(1.0)));
         }
     }
 
-    fn draw_game_over(&mut self) {
-        let alpha = (self.game_over_time / 0.2).min(1.0);
+    fn draw_press_space(&mut self) {
+        let text = "Press [SPACE]";
+        let mut pos = WINDOW_CENTER;
+        pos.y -= 50.0;
+        let mut alpha = (self.time * 2.0 * PI).sin(); // -1 .. 1
+        alpha = (alpha + 2.0) / 3.0;
+
+        for glyph in self
+            .glyph_atlas_small
+            .iter_text_glyphs(Pivot::Center(pos), &text)
+        {
+            self.renderer
+                .draw_glyph(glyph, Some(WHITE.with_alpha(alpha)));
+        }
+    }
+
+    fn draw_game_over(&mut self, death_time: f32) {
+        let alpha = (death_time / 0.2).min(1.0);
         let text = "Game Over";
-        let pos = Vector2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0);
-        for glyph in
-            self.glyph_atlas.iter_text_glyphs(Pivot::Center(pos), &text)
+        let pos = WINDOW_CENTER;
+        for glyph in self
+            .glyph_atlas_large
+            .iter_text_glyphs(Pivot::Center(pos), &text)
         {
             self.renderer
                 .draw_glyph(glyph, Some(WHITE.with_alpha(alpha)));

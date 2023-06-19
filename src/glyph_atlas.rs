@@ -135,34 +135,15 @@ impl GlyphAtlas {
     }
 
     fn get_text_size(&self, text: &str) -> Vector2<f32> {
-        let pivot = Pivot::BotLeft(Vector2::zeros());
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-        for glyph in self.iter_text_glyphs(pivot, text) {
-            min_x = min_x.min(glyph.rect.get_min_x());
-            max_x = max_x.max(glyph.rect.get_max_x());
-            min_y = min_y.min(glyph.rect.get_min_y());
-            max_y = max_y.max(glyph.rect.get_max_y());
+        let mut width: f32 = 0.0;
+        let mut height: f32 = 0.0;
+        for symbol in text.chars() {
+            let glyph = self.get_glyph(symbol);
+            width += glyph.advance.x;
+            height = height.max(glyph.rect.get_height());
         }
-
-        let width = max_x - min_x;
-        let height = max_y - min_y;
 
         Vector2::new(width, height)
-    }
-
-    fn get_glyph(&self, cursor: &Vector2<f32>, symbol: char) -> Glyph {
-        let mut idx = symbol as usize;
-        if idx < 32 || idx > 126 {
-            idx = 63; // Question mark
-        }
-
-        let mut glyph = self.glyphs[idx - 32];
-        glyph.rect.translate_assign(cursor);
-
-        glyph
     }
 
     pub fn iter_text_glyphs<'a>(
@@ -172,19 +153,41 @@ impl GlyphAtlas {
     ) -> impl IntoIterator<Item = Glyph> + 'a {
         use Pivot::*;
 
+        let size = self.get_text_size(text);
         let mut cursor = match pivot {
             BotLeft(pos) => pos,
-            Center(pos) => pos - self.get_text_size(text) * 0.5,
+            Center(pos) => pos - size * 0.5,
+            TopCenter(mut pos) => {
+                pos.x -= size.x * 0.5;
+                pos.y -= size.y;
+                pos
+            }
+            BotCenter(mut pos) => {
+                pos.x -= size.x * 0.5;
+                pos
+            }
             _ => {
                 todo!()
             }
         };
 
         text.chars().map(move |symbol| {
-            let glyph = self.get_glyph(&cursor, symbol);
+            let mut glyph = self.get_glyph(symbol);
+            glyph.rect.translate_assign(&cursor);
             cursor += glyph.advance;
 
             glyph
         })
+    }
+
+    fn get_glyph(&self, symbol: char) -> Glyph {
+        let mut idx = symbol as usize;
+        if idx < 32 || idx > 126 {
+            idx = 63; // Question mark
+        }
+
+        let glyph = self.glyphs[idx - 32];
+
+        glyph
     }
 }

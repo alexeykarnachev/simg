@@ -6,4 +6,6 @@ pub enum Pivot {
     BotRight(Vector2<f32>),
     TopRight(Vector2<f32>),
     Center(Vector2<f32>),
+    TopCenter(Vector2<f32>),
+    BotCenter(Vector2<f32>),
 }
