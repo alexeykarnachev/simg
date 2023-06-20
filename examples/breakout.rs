@@ -53,7 +53,8 @@ const PADDLE_MAX_SPEED: f32 = 400.0;
 const PADDLE_ACCELERATION: f32 = 8000.0;
 
 const BALL_RADIUS: f32 = 8.0;
-const INIT_BALL_SPEED: f32 = 400.0;
+const BALL_START_SPEED: f32 = 320.0;
+const BALL_SPEAD_INCREAS_FACTOR: f32 = 0.01;
 const BALL_DEATH_ANIM_TIME: f32 = 0.15;
 
 pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
@@ -115,7 +116,7 @@ impl Ball {
     pub fn new() -> Self {
         Self {
             circle: Circle::from_bot(WINDOW_CENTER, BALL_RADIUS),
-            speed: INIT_BALL_SPEED,
+            speed: BALL_START_SPEED,
             velocity: Vector2::zeros(),
             is_dead: false,
         }
@@ -127,6 +128,7 @@ struct Paddle {
     max_speed: f32,
     velocity: f32,
     acceleration: f32,
+    is_shrinked: bool,
 }
 
 impl Paddle {
@@ -141,6 +143,7 @@ impl Paddle {
             max_speed: PADDLE_MAX_SPEED,
             velocity: 0.0,
             acceleration: PADDLE_ACCELERATION,
+            is_shrinked: false,
         }
     }
 }
@@ -379,13 +382,22 @@ impl Game {
             self.ball.velocity = reflect(&self.ball.velocity, &DOWN);
             self.ball.circle.center.y =
                 field_max_y - self.ball.circle.radius;
+            if !self.paddle.is_shrinked {
+                let mut size = self.paddle.rect.get_size();
+                size.x *= 0.5;
+                self.paddle.rect = Rectangle::from_center(
+                    self.paddle.rect.get_center(),
+                    size,
+                );
+                self.paddle.is_shrinked = true;
+            }
         } else if ball_min_y < field_min_y {
-            self.state = State::NotStarted;
-            self.ball.is_dead = true;
-            self.game_over_time = Some(self.time);
-            // self.ball.velocity = reflect(&self.ball.velocity, &UP);
-            // self.ball.circle.center.y =
-            //     field_min_y + self.ball.circle.radius;
+            // self.state = State::NotStarted;
+            // self.ball.is_dead = true;
+            // self.game_over_time = Some(self.time);
+            self.ball.velocity = reflect(&self.ball.velocity, &UP);
+            self.ball.circle.center.y =
+                field_min_y + self.ball.circle.radius;
         }
 
         if let Some(mtv) =
@@ -408,12 +420,11 @@ impl Game {
     }
 
     fn update_blocks(&mut self) {
-        let mut all_blocks_dead = true;
-        for block in
-            self.blocks.iter_mut().filter(|b| b.death_time.is_none())
-        {
-            all_blocks_dead = false;
-            if let Some(mtv) =
+        let mut n_blocks_dead = 0;
+        for block in self.blocks.iter_mut() {
+            if block.death_time.is_some() {
+                n_blocks_dead += 1;
+            } else if let Some(mtv) =
                 get_circle_rectangle_mtv(&self.ball.circle, &block.rect)
             {
                 self.ball.circle.center += mtv;
@@ -424,9 +435,12 @@ impl Game {
             }
         }
 
-        if all_blocks_dead {
+        if n_blocks_dead == self.blocks.len() {
             self.game_over_time = Some(self.time);
             self.state = State::NotStarted;
+        } else {
+            self.ball.speed = BALL_START_SPEED
+                * (1.0 + BALL_SPEAD_INCREAS_FACTOR * n_blocks_dead as f32);
         }
     }
 
