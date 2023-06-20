@@ -11,7 +11,6 @@ use simg::geometry::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
 use simg::program::Program;
-use simg::program::ProgramArg::ColorArg;
 use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
@@ -51,7 +50,7 @@ const PADDLE_ELEVATION: f32 = CELL_HEIGHT * 6.0;
 const PADDLE_MAX_SPEED: f32 = 400.0;
 const PADDLE_ACCELERATION: f32 = 8000.0;
 
-const BALL_RADIUS: f32 = 8.0;
+const BALL_RADIUS: f32 = 256.0;
 const INIT_BALL_SPEED: f32 = 400.0;
 const BALL_DEATH_ANIM_TIME: f32 = 0.15;
 

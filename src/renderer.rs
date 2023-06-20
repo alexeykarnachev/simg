@@ -22,6 +22,7 @@ const MAX_N_VERTICES: usize = 1 << 15;
 const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
+const N_MULTISAMPLES: u8 = 16;
 
 impl Program {
     fn new_gl(gl: &glow::Context, vert_src: &str, frag_src: &str) -> Self {
@@ -195,7 +196,8 @@ pub struct Renderer {
     texcoords_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
 
-    postfx_buffer_size: (u32, u32),
+    ms_fbo: glow::NativeFramebuffer,
+
     postfx_fbo: glow::NativeFramebuffer,
     postfx_tex: glow::Texture,
 
@@ -228,6 +230,7 @@ impl Renderer {
         let gl_attr = video.gl_attr();
         gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
         gl_attr.set_context_version(4, 6);
+        gl_attr.set_multisample_samples(N_MULTISAMPLES);
 
         let gl_profile;
         let gl_major_version;
@@ -270,13 +273,16 @@ impl Renderer {
         let positions_vbo;
         let texcoords_vbo;
         let colors_vbo;
+        let ms_fbo;
         let postfx_tex;
         let postfx_fbo;
-        let postfx_buffer_size = window_size;
         unsafe {
             gl.enable(glow::BLEND);
             gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            gl.enable(glow::MULTISAMPLE);
 
+            // -----------------------------------------------------------
+            // Vertex buffers
             vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
 
@@ -310,12 +316,64 @@ impl Renderer {
             gl.enable_vertex_attrib_array(2);
             gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
 
+            // -----------------------------------------------------------
+            // Multisample buffer
+            #[cfg(not(target_os = "emscripten"))]
+            {
+                ms_fbo = gl.create_framebuffer().unwrap();
+                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(ms_fbo));
+                let ms_tex = gl.create_texture().unwrap();
+                gl.bind_texture(
+                    glow::TEXTURE_2D_MULTISAMPLE,
+                    Some(ms_tex),
+                );
+                gl.tex_image_2d_multisample(
+                    glow::TEXTURE_2D_MULTISAMPLE,
+                    N_MULTISAMPLES as i32,
+                    glow::RGBA32F as i32,
+                    window_size.0 as i32,
+                    window_size.1 as i32,
+                    false,
+                );
+                gl.bind_texture(glow::TEXTURE_2D_MULTISAMPLE, None);
+                gl.framebuffer_texture_2d(
+                    glow::FRAMEBUFFER,
+                    glow::COLOR_ATTACHMENT0,
+                    glow::TEXTURE_2D_MULTISAMPLE,
+                    Some(ms_tex),
+                    0,
+                );
+            }
+
+            #[cfg(target_os = "emscripten")]
+            {
+                ms_fbo = gl.create_framebuffer().unwrap();
+                let ms_rbo = gl.create_renderbuffer().unwrap();
+                gl.bind_renderbuffer(glow::RENDERBUFFER, Some(ms_rbo));
+                gl.renderbuffer_storage_multisample(
+                    glow::RENDERBUFFER,
+                    N_MULTISAMPLES as i32,
+                    glow::RGBA32F,
+                    window_size.0 as i32,
+                    window_size.1 as i32,
+                );
+                gl.bind_framebuffer(glow::FRAMEBUFFER, Some(ms_fbo));
+                gl.framebuffer_renderbuffer(
+                    glow::FRAMEBUFFER,
+                    glow::COLOR_ATTACHMENT0,
+                    glow::RENDERBUFFER,
+                    Some(ms_rbo),
+                );
+            }
+
+            // -----------------------------------------------------------
+            // Postfx buffer
             postfx_fbo = gl.create_framebuffer().unwrap();
             postfx_tex = create_texture(
                 &gl,
                 glow::RGBA32F as i32,
-                postfx_buffer_size.0 as i32,
-                postfx_buffer_size.1 as i32,
+                window_size.0 as i32,
+                window_size.1 as i32,
                 glow::RGBA,
                 glow::FLOAT,
                 None,
@@ -347,7 +405,8 @@ impl Renderer {
             texcoords_vbo,
             colors_vbo,
 
-            postfx_buffer_size,
+            ms_fbo,
+
             postfx_fbo,
             postfx_tex,
 
@@ -584,26 +643,16 @@ impl Renderer {
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
 
-            if postfx_program.is_some() {
-                self.gl.bind_framebuffer(
-                    glow::FRAMEBUFFER,
-                    Some(self.postfx_fbo),
-                );
-                self.gl.viewport(
-                    0,
-                    0,
-                    self.postfx_buffer_size.0 as i32,
-                    self.postfx_buffer_size.1 as i32,
-                );
-            } else {
-                self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-                self.gl.viewport(
-                    0,
-                    0,
-                    self.window_size.0 as i32,
-                    self.window_size.1 as i32,
-                );
-            }
+            // -----------------------------------------------------------
+            // Draw scene to the multisample buffer
+            self.gl
+                .bind_framebuffer(glow::FRAMEBUFFER, Some(self.ms_fbo));
+            self.gl.viewport(
+                0,
+                0,
+                self.window_size.0 as i32,
+                self.window_size.1 as i32,
+            );
 
             self.gl.clear_color(
                 clear_color.r,
@@ -666,7 +715,31 @@ impl Renderer {
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
             }
 
+            // -----------------------------------------------------------
+            // Read from the multisample buffer...
+            self.gl.bind_framebuffer(
+                glow::READ_FRAMEBUFFER,
+                Some(self.ms_fbo),
+            );
+
+            // And draw to the postfx buffer (if exists)
             if let Some(program) = postfx_program {
+                self.gl.bind_framebuffer(
+                    glow::DRAW_FRAMEBUFFER,
+                    Some(self.postfx_fbo),
+                );
+                self.gl.blit_framebuffer(
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    glow::COLOR_BUFFER_BIT,
+                    glow::NEAREST,
+                );
                 program.bind(&self.gl);
                 program.set_arg_uniforms(&self.gl);
                 program.set_uniform_1_i32(&self.gl, "u_tex", 0);
@@ -684,6 +757,21 @@ impl Renderer {
                 );
 
                 self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+            // Otherwise blit directly to the screen framebuffer
+            } else {
+                self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+                self.gl.blit_framebuffer(
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    glow::COLOR_BUFFER_BIT,
+                    glow::NEAREST,
+                );
             }
         }
 

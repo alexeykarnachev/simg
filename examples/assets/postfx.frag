@@ -26,13 +26,13 @@ vec2 apply_fish_eye(vec2 p, float strength) {
 
 void main(void) {
     vec2 uv = vs_texcoord;
-    uv = apply_fish_eye(uv, 0.2);
+    uv = apply_fish_eye(uv, 0.0);
 
     vec4 color = texture(u_tex, uv);
-    color *= vec4(0.9, 0.9, 0.5, 1.0);
+    // color *= vec4(0.9, 0.9, 0.5, 1.0);
 
-	float scanline = sin(uv.y * 800.0) * 0.2;
-	color -= scanline;
+	// float scanline = sin(uv.y * 800.0) * 0.2;
+	// color -= scanline;
 
     fs_frag = color;
 }
