@@ -15,6 +15,8 @@ use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
 
+const MSAA: i32 = 16;
+
 const GAME_DT: f32 = 0.001;
 
 const WINDOW_WIDTH: f32 = 800.0;
@@ -50,7 +52,7 @@ const PADDLE_ELEVATION: f32 = CELL_HEIGHT * 6.0;
 const PADDLE_MAX_SPEED: f32 = 400.0;
 const PADDLE_ACCELERATION: f32 = 8000.0;
 
-const BALL_RADIUS: f32 = 256.0;
+const BALL_RADIUS: f32 = 8.0;
 const INIT_BALL_SPEED: f32 = 400.0;
 const BALL_DEATH_ANIM_TIME: f32 = 0.15;
 
@@ -186,6 +188,7 @@ impl Game {
             "Breakout",
             WINDOW_WIDTH as u32,
             WINDOW_HEIGHT as u32,
+            MSAA,
         );
 
         let glyph_atlas_large = GlyphAtlas::new(FONT, 48);
