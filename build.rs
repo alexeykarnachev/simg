@@ -13,7 +13,8 @@ fn main() {
                 -s FULL_ES3=1 \
                 -s MIN_WEBGL_VERSION=2 \
                 -s MAX_WEBGL_VERSION=2 \
-                -s STACK_SIZE=10485760"
+                -s INITIAL_MEMORY=67108864 \
+                -s STACK_SIZE=20971520"
             );
         }
         _ => {}

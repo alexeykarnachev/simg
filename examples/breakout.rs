@@ -5,6 +5,7 @@ use core::f32::consts::PI;
 use nalgebra::Vector2;
 use rand::Rng;
 use sdl2::keyboard::Keycode;
+use simg::audio_player::AudioPlayer;
 use simg::color::*;
 use simg::common::Pivot;
 use simg::geometry::*;
@@ -57,10 +58,18 @@ const BALL_START_SPEED: f32 = 320.0;
 const BALL_SPEAD_INCREAS_FACTOR: f32 = 0.01;
 const BALL_DEATH_ANIM_TIME: f32 = 0.15;
 
-pub const POSTFX_FRAG_SRC: &str = include_str!("./assets/postfx.frag");
+pub const POSTFX_FRAG_SRC: &str =
+    include_str!("./assets/breakout/postfx.frag");
 pub const FONT: &[u8] = include_bytes!(
     "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
 );
+pub const BLOCK_DEATH_SOUND: &[u8] =
+    include_bytes!("./assets/breakout/block_death.wav");
+pub const BALL_DEATH_SOUND: &[u8] =
+    include_bytes!("./assets/breakout/ball_death.wav");
+pub const BALL_HIT_SOUND: &[u8] =
+    include_bytes!("./assets/breakout/ball_hit.wav");
+pub const MUSIC: &[u8] = include_bytes!("./assets/breakout/music.wav");
 
 struct Block {
     rect: Rectangle,
@@ -160,7 +169,14 @@ struct Game {
     timer: sdl2::TimerSubsystem,
     should_quit: bool,
 
+    sdl2: sdl2::Sdl,
     input: Input,
+    audio_player: AudioPlayer<'static>,
+    music: usize,
+    block_death_sound: usize,
+    ball_death_sound: usize,
+    ball_hit_sound: usize,
+
     renderer: Renderer,
 
     glyph_atlas_large: GlyphAtlas,
@@ -208,7 +224,13 @@ impl Game {
             prev_ticks: timer.ticks(),
             timer,
             should_quit: false,
+            sdl2,
             input,
+            audio_player: AudioPlayer::new(),
+            music: 0,
+            block_death_sound: 0,
+            ball_death_sound: 0,
+            ball_hit_sound: 0,
             renderer,
             glyph_atlas_large,
             glyph_tex_large,
@@ -300,6 +322,22 @@ impl Game {
 
         if self.input.keycodes.is_just_pressed(Space) {
             self.reset();
+            if !self.audio_player.is_initialized {
+                self.audio_player.init(&self.sdl2);
+                self.music =
+                    self.audio_player.load_music_from_bytes(MUSIC);
+                self.block_death_sound = self
+                    .audio_player
+                    .load_chunk_from_wav_bytes(BLOCK_DEATH_SOUND);
+                self.ball_death_sound = self
+                    .audio_player
+                    .load_chunk_from_wav_bytes(BALL_DEATH_SOUND);
+                self.ball_hit_sound = self
+                    .audio_player
+                    .load_chunk_from_wav_bytes(BALL_HIT_SOUND);
+            }
+
+            self.audio_player.play_music(self.music);
 
             self.state = State::Started;
             let mut rng = rand::thread_rng();
@@ -374,10 +412,12 @@ impl Game {
             self.ball.velocity = reflect(&self.ball.velocity, &RIGHT);
             self.ball.circle.center.x =
                 field_min_x + self.ball.circle.radius;
+            self.audio_player.play_chunk(self.ball_hit_sound);
         } else if ball_max_x > field_max_x {
             self.ball.velocity = reflect(&self.ball.velocity, &LEFT);
             self.ball.circle.center.x =
                 field_max_x - self.ball.circle.radius;
+            self.audio_player.play_chunk(self.ball_hit_sound);
         } else if ball_max_y > field_max_y {
             self.ball.velocity = reflect(&self.ball.velocity, &DOWN);
             self.ball.circle.center.y =
@@ -391,6 +431,7 @@ impl Game {
                 );
                 self.paddle.is_shrinked = true;
             }
+            self.audio_player.play_chunk(self.ball_hit_sound);
         } else if ball_min_y < field_min_y {
             // self.state = State::NotStarted;
             // self.ball.is_dead = true;
@@ -398,6 +439,9 @@ impl Game {
             self.ball.velocity = reflect(&self.ball.velocity, &UP);
             self.ball.circle.center.y =
                 field_min_y + self.ball.circle.radius;
+
+            self.audio_player.play_chunk(self.ball_death_sound);
+            self.audio_player.fade_out_music(800);
         }
 
         if let Some(mtv) =
@@ -413,6 +457,7 @@ impl Game {
             };
             self.ball.velocity =
                 Vector2::new(angle.cos(), angle.sin()) * self.ball.speed;
+            self.audio_player.play_chunk(self.ball_hit_sound);
         }
 
         self.ball.velocity =
@@ -431,6 +476,7 @@ impl Game {
                 self.ball.velocity = reflect(&self.ball.velocity, &mtv);
                 self.scores += block.score;
                 block.death_time = Some(self.time);
+                self.audio_player.play_chunk(self.block_death_sound);
                 break;
             }
         }

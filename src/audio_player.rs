@@ -67,6 +67,10 @@ impl AudioPlayer<'_> {
         music.play(-1).unwrap();
     }
 
+    pub fn fade_out_music(&self, ms: u32) {
+        Music::fade_out(ms as i32).unwrap();
+    }
+
     pub fn play_chunk(&self, idx: usize) {
         let sound = &self.chunks[idx];
         let _ = Channel::all().play(sound, 0);
