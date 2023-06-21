@@ -69,6 +69,7 @@ pub const BALL_DEATH_SOUND: &[u8] =
     include_bytes!("./assets/breakout/ball_death.wav");
 pub const BALL_HIT_SOUND: &[u8] =
     include_bytes!("./assets/breakout/ball_hit.wav");
+pub const WIN_SOUND: &[u8] = include_bytes!("./assets/breakout/win.wav");
 pub const MUSIC: &[u8] = include_bytes!("./assets/breakout/music.wav");
 
 struct Block {
@@ -176,6 +177,7 @@ struct Game {
     block_death_sound: usize,
     ball_death_sound: usize,
     ball_hit_sound: usize,
+    win_sound: usize,
 
     renderer: Renderer,
 
@@ -231,6 +233,7 @@ impl Game {
             block_death_sound: 0,
             ball_death_sound: 0,
             ball_hit_sound: 0,
+            win_sound: 0,
             renderer,
             glyph_atlas_large,
             glyph_tex_large,
@@ -335,6 +338,8 @@ impl Game {
                 self.ball_hit_sound = self
                     .audio_player
                     .load_chunk_from_wav_bytes(BALL_HIT_SOUND);
+                self.win_sound =
+                    self.audio_player.load_chunk_from_wav_bytes(WIN_SOUND);
             }
 
             self.audio_player.play_music(self.music);
@@ -433,12 +438,12 @@ impl Game {
             }
             self.audio_player.play_chunk(self.ball_hit_sound);
         } else if ball_min_y < field_min_y {
-            // self.state = State::NotStarted;
-            // self.ball.is_dead = true;
-            // self.game_over_time = Some(self.time);
-            self.ball.velocity = reflect(&self.ball.velocity, &UP);
-            self.ball.circle.center.y =
-                field_min_y + self.ball.circle.radius;
+            self.state = State::NotStarted;
+            self.ball.is_dead = true;
+            self.game_over_time = Some(self.time);
+            // self.ball.velocity = reflect(&self.ball.velocity, &UP);
+            // self.ball.circle.center.y =
+            //     field_min_y + self.ball.circle.radius;
 
             self.audio_player.play_chunk(self.ball_death_sound);
             self.audio_player.fade_out_music(800);
@@ -484,6 +489,9 @@ impl Game {
         if n_blocks_dead == self.blocks.len() {
             self.game_over_time = Some(self.time);
             self.state = State::NotStarted;
+
+            self.audio_player.play_chunk(self.win_sound);
+            self.audio_player.fade_out_music(800);
         } else {
             self.ball.speed = BALL_START_SPEED
                 * (1.0 + BALL_SPEAD_INCREAS_FACTOR * n_blocks_dead as f32);
