@@ -1,4 +1,5 @@
 use nalgebra::Vector2;
+use sdl2::keyboard::Keycode;
 use simg::camera::Camera2D;
 use simg::color::*;
 use simg::common::Pivot;
@@ -23,6 +24,8 @@ const MAX_N_ENEMIES: usize = 100;
 const ENEMY_CIRCLE_RADIUR: f32 = 20.0;
 
 const SPAWN_START_PERIOD: f32 = 100.0;
+
+const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
 pub const FONT: &[u8] = include_bytes!(
     "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
@@ -83,9 +86,11 @@ struct Game {
     camera: Camera2D,
     player: Player,
     enemies: [Enemy; MAX_N_ENEMIES],
+    text_input: String,
 
     prev_spawn_time: f32,
     spawn_period: f32,
+    last_type_time: f32,
 }
 
 impl Game {
@@ -101,7 +106,7 @@ impl Game {
             MSAA,
         );
 
-        let glyph_atlas_small = GlyphAtlas::new(FONT, 50);
+        let glyph_atlas_small = GlyphAtlas::new(FONT, 27);
         let glyph_tex_small =
             renderer.load_texture_from_glyph_atlas(&glyph_atlas_small);
 
@@ -122,9 +127,11 @@ impl Game {
             camera: Camera2D::new(Vector2::zeros()),
             player: Player::new(),
             enemies: [(); MAX_N_ENEMIES].map(|_| Enemy::default()),
+            text_input: String::with_capacity(32),
 
             prev_spawn_time: 0.0,
             spawn_period: SPAWN_START_PERIOD,
+            last_type_time: 0.0,
         }
     }
 
@@ -150,14 +157,20 @@ impl Game {
 
     fn update_input(&mut self) {
         self.input.update();
+        if self.input.text_input.len() > 0 {
+            self.text_input.push_str(&self.input.text_input);
+            self.last_type_time = self.time;
+        }
+        if self.input.keycodes.is_just_repeated(Keycode::Backspace) {
+            self.text_input.pop();
+            self.last_type_time = self.time;
+        }
         self.should_quit |= self.input.should_quit;
     }
 
     fn update_game(&mut self) {
-        self.update_enemies();
-    }
-
-    fn update_enemies(&mut self) {
+        // ---------------------------------------------------------------
+        // Update enemies
         let mut free_idx = -1;
         let mut is_all_dead = true;
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
@@ -194,32 +207,23 @@ impl Game {
     }
 
     fn update_renderer(&mut self) {
+        // ---------------------------------------------------------------
+        // Draw player and enemies
         self.renderer.start_new_batch(Proj2D(self.camera), None);
-        self.draw_player();
-        self.draw_enemies();
+        self.renderer
+            .draw_circle(self.player.circle, None, Some(RED));
 
+        for enemy in self.enemies.iter().filter(|e| e.is_alive) {
+            self.renderer.draw_circle(enemy.circle, None, Some(YELLOW));
+        }
+
+        // ---------------------------------------------------------------
+        // Draw enemy names
         self.renderer.start_new_batch(
             Proj2D(self.camera),
             Some(self.glyph_tex_small),
         );
-        self.draw_enemy_names();
 
-        self.renderer.end_drawing(Color::gray(0.1, 1.0), None);
-        self.renderer.swap_window();
-    }
-
-    fn draw_player(&mut self) {
-        self.renderer
-            .draw_circle(self.player.circle, None, Some(RED));
-    }
-
-    fn draw_enemies(&mut self) {
-        for enemy in self.enemies.iter().filter(|e| e.is_alive) {
-            self.renderer.draw_circle(enemy.circle, None, Some(YELLOW));
-        }
-    }
-
-    fn draw_enemy_names(&mut self) {
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
             let mut pos = enemy.circle.get_top();
             pos.y += 10.0;
@@ -231,6 +235,50 @@ impl Game {
                     .draw_glyph(glyph, Some(Color::gray(0.9, 1.0)));
             }
         }
+
+        // ---------------------------------------------------------------
+        // Draw text input
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+
+        let atlas = &self.glyph_atlas_small;
+        let color = Color::gray(0.9, 1.0);
+        let mut cursor = Vector2::new(20.0, 20.0);
+
+        let pivot = Pivot::BotLeft(cursor);
+        for glyph in atlas.iter_text_glyphs(pivot, "> ") {
+            cursor += glyph.advance;
+            self.renderer.draw_glyph(glyph, Some(color));
+        }
+
+        let pivot = Pivot::BotLeft(cursor);
+        for glyph in atlas.iter_text_glyphs(pivot, &self.text_input) {
+            cursor += glyph.advance;
+            self.renderer.draw_glyph(glyph, Some(color));
+        }
+
+        // ---------------------------------------------------------------
+        // Draw cursor rectangle
+        if ((self.time - self.last_type_time) / CURSOR_BLINK_PERIOD) as u32
+            % 2
+            == 0
+        {
+            self.renderer.start_new_batch(ProjScreen, None);
+
+            let cursor_rect = Rectangle::from_bot_left(
+                Vector2::new(cursor.x, cursor.y + atlas.glyph_descent),
+                Vector2::new(
+                    atlas.font_size as f32 / 2.0,
+                    atlas.glyph_ascent - atlas.glyph_descent,
+                ),
+            );
+            self.renderer.draw_rect(cursor_rect, None, Some(color));
+        }
+
+        // ---------------------------------------------------------------
+        // Finalize drawing
+        self.renderer.end_drawing(Color::gray(0.1, 1.0), None);
+        self.renderer.swap_window();
     }
 }
 
