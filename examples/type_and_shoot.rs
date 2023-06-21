@@ -5,6 +5,7 @@ use simg::common::Pivot;
 use simg::geometry::*;
 use simg::glyph_atlas::GlyphAtlas;
 use simg::input::Input;
+use simg::program::Texture;
 use simg::renderer::Projection::*;
 use simg::renderer::Renderer;
 use simg::shapes::*;
@@ -21,7 +22,7 @@ const PLAYER_CIRCLE_RADIUS: f32 = 20.0;
 const MAX_N_ENEMIES: usize = 100;
 const ENEMY_CIRCLE_RADIUR: f32 = 20.0;
 
-const SPAWN_START_PERIOD: f32 = 1.0;
+const SPAWN_START_PERIOD: f32 = 100.0;
 
 pub const FONT: &[u8] = include_bytes!(
     "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
@@ -77,7 +78,7 @@ struct Game {
     renderer: Renderer,
 
     glyph_atlas_small: GlyphAtlas,
-    glyph_tex_small: u32,
+    glyph_tex_small: Texture,
 
     camera: Camera2D,
     player: Player,
@@ -94,13 +95,13 @@ impl Game {
         let input = Input::new(&sdl2);
         let mut renderer = Renderer::new(
             &sdl2,
-            "Game",
+            "Type and Shoot",
             WINDOW_WIDTH as u32,
             WINDOW_HEIGHT as u32,
             MSAA,
         );
 
-        let glyph_atlas_small = GlyphAtlas::new(FONT, 24);
+        let glyph_atlas_small = GlyphAtlas::new(FONT, 50);
         let glyph_tex_small =
             renderer.load_texture_from_glyph_atlas(&glyph_atlas_small);
 
@@ -158,12 +159,14 @@ impl Game {
 
     fn update_enemies(&mut self) {
         let mut free_idx = -1;
+        let mut is_all_dead = true;
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
             if !enemy.is_alive && free_idx == -1 {
                 free_idx = idx as i32;
             }
 
             if enemy.is_alive {
+                is_all_dead = false;
                 if get_circle_circle_mtv(
                     &enemy.circle,
                     &self.player.circle,
@@ -179,8 +182,9 @@ impl Game {
             }
         }
 
-        if free_idx != -1
-            && self.time - self.prev_spawn_time >= self.spawn_period
+        if is_all_dead
+            || (free_idx != -1
+                && self.time - self.prev_spawn_time >= self.spawn_period)
         {
             let name = format!("Enemy {}", free_idx);
             let position = get_rnd_unit_2d() * 200.0;
@@ -224,7 +228,7 @@ impl Game {
                 .iter_text_glyphs(Pivot::BotCenter(pos), &enemy.name)
             {
                 self.renderer
-                    .draw_glyph(glyph, Some(Color::gray(0.5, 1.0)));
+                    .draw_glyph(glyph, Some(Color::gray(0.9, 1.0)));
             }
         }
     }

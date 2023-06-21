@@ -145,11 +145,75 @@ impl Program {
     }
 }
 
+impl Texture {
+    fn new_gl(
+        gl: &glow::Context,
+        data: Option<&[u8]>,
+        internal_format: u32,
+        width: u32,
+        height: u32,
+        format: u32,
+        data_type: u32,
+        filter: u32,
+    ) -> Self {
+        let tex;
+
+        unsafe {
+            tex = gl.create_texture().unwrap();
+            gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                internal_format as i32,
+                width as i32,
+                height as i32,
+                0,
+                format,
+                data_type,
+                data,
+            );
+
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                filter as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                filter as i32,
+            );
+        }
+
+        Self::new(tex.0.get(), width, height)
+    }
+
+    fn to_glow(&self) -> glow::Texture {
+        glow::NativeTexture(NonZeroU32::new(self.idx).unwrap())
+    }
+
+    fn bind(&self, gl: &glow::Context) {
+        unsafe {
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.to_glow()));
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct BatchInfo {
     start: usize,
     count: usize,
-    tex: Option<u32>,
+    tex: Option<Texture>,
     transform: Matrix4<f32>,
 }
 
@@ -161,7 +225,7 @@ pub enum Projection {
 impl BatchInfo {
     pub fn new(
         start: usize,
-        tex: Option<u32>,
+        tex: Option<Texture>,
         transform: Matrix4<f32>,
     ) -> Self {
         Self {
@@ -198,7 +262,7 @@ pub struct Renderer {
     ms_fbo: Option<glow::NativeFramebuffer>,
 
     postfx_fbo: glow::NativeFramebuffer,
-    postfx_tex: glow::Texture,
+    postfx_tex: Texture,
 
     positions: [f32; MAX_N_VERTICES * 3],
     texcoords: [f32; MAX_N_VERTICES * 2],
@@ -341,14 +405,14 @@ impl Renderer {
             // -----------------------------------------------------------
             // Postfx buffer
             postfx_fbo = gl.create_framebuffer().unwrap();
-            postfx_tex = create_texture(
+            postfx_tex = Texture::new_gl(
                 &gl,
-                glow::RGBA32F as i32,
-                window_size.0 as i32,
-                window_size.1 as i32,
+                None,
+                glow::RGBA32F,
+                window_size.0,
+                window_size.1,
                 glow::RGBA,
                 glow::FLOAT,
-                None,
                 glow::NEAREST,
             );
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(postfx_fbo));
@@ -356,7 +420,7 @@ impl Renderer {
                 glow::FRAMEBUFFER,
                 glow::COLOR_ATTACHMENT0,
                 glow::TEXTURE_2D,
-                Some(postfx_tex),
+                Some(postfx_tex.to_glow()),
                 0,
             );
 
@@ -408,7 +472,7 @@ impl Renderer {
         bytes: &[u8],
         width: u32,
         height: u32,
-    ) -> u32 {
+    ) -> Texture {
         let n_components = bytes.len() as u32 / (width * height);
         let (format, internal_format, alignment) = match n_components {
             1 => {
@@ -435,22 +499,24 @@ impl Renderer {
             self.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, alignment);
         }
 
-        let tex = create_texture(
+        Texture::new_gl(
             &self.gl,
-            internal_format as i32,
-            width as i32,
-            height as i32,
+            Some(bytes),
+            internal_format,
+            width,
+            height,
             format,
             glow::UNSIGNED_BYTE,
-            Some(bytes),
             glow::LINEAR,
-        );
-
-        tex.0.get()
+        )
     }
 
-    pub fn load_texture_from_image_bytes(&mut self, bytes: &[u8]) -> u32 {
-        let image = load_from_memory_with_format(bytes, ImageFormat::Png)
+    pub fn load_texture_from_image_bytes(
+        &mut self,
+        bytes: &[u8],
+        format: ImageFormat,
+    ) -> Texture {
+        let image = load_from_memory_with_format(bytes, format)
             .expect("Can't decode image bytes")
             .into_rgba8();
 
@@ -464,7 +530,7 @@ impl Renderer {
     pub fn load_texture_from_glyph_atlas(
         &mut self,
         atlas: &GlyphAtlas,
-    ) -> u32 {
+    ) -> Texture {
         self.load_texture_from_pixel_bytes(
             &atlas.pixels,
             atlas.image_width,
@@ -563,7 +629,11 @@ impl Renderer {
         self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
 
-    pub fn start_new_batch(&mut self, proj: Projection, tex: Option<u32>) {
+    pub fn start_new_batch(
+        &mut self,
+        proj: Projection,
+        tex: Option<Texture>,
+    ) {
         use Projection::*;
 
         if self.n_batches == MAX_N_BATCHES {
@@ -619,10 +689,8 @@ impl Renderer {
             // Draw scene to the multisample buffer
             let out_fbo = if let Some(ms_fbo) = self.ms_fbo {
                 Some(ms_fbo)
-            } else if postfx_program.is_some() {
-                Some(self.postfx_fbo)
             } else {
-                None
+                Some(self.postfx_fbo)
             };
 
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, out_fbo);
@@ -675,19 +743,18 @@ impl Renderer {
 
                 let mut use_tex = 0;
                 if let Some(tex) = tex {
-                    self.gl.bind_texture(
-                        glow::TEXTURE_2D,
-                        Some(glow::NativeTexture(
-                            NonZeroU32::new(tex).unwrap(),
-                        )),
+                    tex.bind(&self.gl);
+                    self.program.set_uniform_1_i32(
+                        &self.gl,
+                        "u_tex.tex",
+                        0,
                     );
-                    self.program.set_uniform_1_i32(&self.gl, "u_tex", 0);
 
                     use_tex = 1;
                 }
                 self.program.set_uniform_1_u32(
                     &self.gl,
-                    "u_use_tex",
+                    "u_tex.is_used",
                     use_tex,
                 );
 
@@ -697,46 +764,26 @@ impl Renderer {
             // -----------------------------------------------------------
             // Render the final image
 
-            // If ms buffer exists
+            // Blit ms to postfx
             if self.ms_fbo.is_some() {
                 self.gl
                     .bind_framebuffer(glow::READ_FRAMEBUFFER, self.ms_fbo);
-
-                // And postfx program is set
-                if postfx_program.is_some() {
-                    self.gl.bind_framebuffer(
-                        glow::DRAW_FRAMEBUFFER,
-                        Some(self.postfx_fbo),
-                    );
-                    // Blit ms to postfx
-                    self.gl.blit_framebuffer(
-                        0,
-                        0,
-                        self.window_size.0 as i32,
-                        self.window_size.1 as i32,
-                        0,
-                        0,
-                        self.window_size.0 as i32,
-                        self.window_size.1 as i32,
-                        glow::COLOR_BUFFER_BIT,
-                        glow::NEAREST,
-                    );
-                // Otherwise blit ms to screen
-                } else {
-                    self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
-                    self.gl.blit_framebuffer(
-                        0,
-                        0,
-                        self.window_size.0 as i32,
-                        self.window_size.1 as i32,
-                        0,
-                        0,
-                        self.window_size.0 as i32,
-                        self.window_size.1 as i32,
-                        glow::COLOR_BUFFER_BIT,
-                        glow::NEAREST,
-                    );
-                }
+                self.gl.bind_framebuffer(
+                    glow::DRAW_FRAMEBUFFER,
+                    Some(self.postfx_fbo),
+                );
+                self.gl.blit_framebuffer(
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    glow::COLOR_BUFFER_BIT,
+                    glow::NEAREST,
+                );
             }
 
             // Render postfx program
@@ -746,8 +793,7 @@ impl Renderer {
                 program.set_uniform_1_i32(&self.gl, "u_tex", 0);
 
                 self.gl.active_texture(glow::TEXTURE0 + 0);
-                self.gl
-                    .bind_texture(glow::TEXTURE_2D, Some(self.postfx_tex));
+                self.postfx_tex.bind(&self.gl);
 
                 self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
                 self.gl.viewport(
@@ -758,6 +804,25 @@ impl Renderer {
                 );
 
                 self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+            // Or just blit the postfx to the screen
+            } else {
+                self.gl.bind_framebuffer(
+                    glow::READ_FRAMEBUFFER,
+                    Some(self.postfx_fbo),
+                );
+                self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+                self.gl.blit_framebuffer(
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    0,
+                    0,
+                    self.window_size.0 as i32,
+                    self.window_size.1 as i32,
+                    glow::COLOR_BUFFER_BIT,
+                    glow::NEAREST,
+                );
             }
         }
 
@@ -767,58 +832,6 @@ impl Renderer {
     pub fn swap_window(&self) {
         self.window.gl_swap_window();
     }
-}
-
-fn create_texture(
-    gl: &glow::Context,
-    internal_format: i32,
-    width: i32,
-    height: i32,
-    format: u32,
-    ty: u32,
-    pixels: Option<&[u8]>,
-    filter: u32,
-) -> glow::Texture {
-    let tex;
-
-    unsafe {
-        tex = gl.create_texture().unwrap();
-        gl.bind_texture(glow::TEXTURE_2D, Some(tex));
-        gl.tex_image_2d(
-            glow::TEXTURE_2D,
-            0,
-            internal_format,
-            width,
-            height,
-            0,
-            format,
-            ty,
-            pixels,
-        );
-
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_WRAP_S,
-            glow::CLAMP_TO_EDGE as i32,
-        );
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_WRAP_T,
-            glow::CLAMP_TO_EDGE as i32,
-        );
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_MAG_FILTER,
-            filter as i32,
-        );
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_MIN_FILTER,
-            filter as i32,
-        );
-    }
-
-    tex
 }
 
 fn buffer_sub_data<T>(

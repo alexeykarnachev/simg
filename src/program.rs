@@ -23,3 +23,16 @@ impl Program {
         self.args.insert(name.to_string(), arg);
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct Texture {
+    pub idx: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Texture {
+    pub fn new(idx: u32, width: u32, height: u32) -> Self {
+        Self { idx, width, height }
+    }
+}

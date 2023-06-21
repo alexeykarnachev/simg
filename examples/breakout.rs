@@ -12,6 +12,7 @@ use simg::geometry::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
 use simg::program::Program;
+use simg::program::Texture;
 use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
@@ -182,9 +183,9 @@ struct Game {
     renderer: Renderer,
 
     glyph_atlas_large: GlyphAtlas,
-    glyph_tex_large: u32,
+    glyph_tex_large: Texture,
     glyph_atlas_small: GlyphAtlas,
-    glyph_tex_small: u32,
+    glyph_tex_small: Texture,
 
     postfx: Program,
     frame: Rectangle,
