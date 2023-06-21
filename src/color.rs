@@ -15,6 +15,15 @@ impl Color {
         [self.r, self.g, self.b, self.a]
     }
 
+    pub fn gray(c: f32, a: f32) -> Self {
+        Self {
+            r: c,
+            g: c,
+            b: c,
+            a,
+        }
+    }
+
     pub fn with_alpha(&self, a: f32) -> Self {
         let mut color = self.clone();
         color.a = a;

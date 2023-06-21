@@ -1,5 +1,7 @@
 use crate::shapes::*;
+use core::f32::consts::PI;
 use nalgebra::Vector2;
+use rand::Rng;
 
 pub const UP: Vector2<f32> = Vector2::new(0.0, 1.0);
 pub const DOWN: Vector2<f32> = Vector2::new(0.0, -1.0);
@@ -14,6 +16,13 @@ pub fn reflect(vec: &Vector2<f32>, normal: &Vector2<f32>) -> Vector2<f32> {
     let normal = normal.normalize();
 
     vec - 2.0 * vec.dot(&normal) * normal
+}
+
+pub fn get_rnd_unit_2d() -> Vector2<f32> {
+    let mut rng = rand::thread_rng();
+    let angle = rng.gen_range(-PI..=PI);
+
+    Vector2::new(angle.cos(), angle.sin())
 }
 
 pub fn get_rectangle_rectangle_mtv(
@@ -53,6 +62,26 @@ pub fn get_rectangle_rectangle_mtv(
         }
 
         return Some(mtv);
+    }
+
+    None
+}
+
+pub fn get_circle_circle_mtv(
+    circle0: &Circle,
+    circle1: &Circle,
+) -> Option<Vector2<f32>> {
+    let diff = circle1.center - circle0.center;
+    let dist = diff.magnitude_squared().sqrt();
+    let axis = if dist > f32::EPSILON {
+        diff / dist
+    } else {
+        RIGHT
+    };
+
+    let radii_sum = circle0.radius + circle1.radius;
+    if dist < radii_sum {
+        return Some(axis * (dist - radii_sum));
     }
 
     None

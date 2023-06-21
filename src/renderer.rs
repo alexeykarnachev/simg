@@ -319,33 +319,6 @@ impl Renderer {
             // Multisample buffer
             let n_samples = get_msaa_max_n_samples(&gl, msaa);
             if n_samples > 0 {
-                // #[cfg(not(target_os = "emscripten"))]
-                // {
-                //     ms_fbo = Some(gl.create_framebuffer().unwrap());
-                //     gl.bind_framebuffer(glow::FRAMEBUFFER, ms_fbo);
-                //     let ms_tex = gl.create_texture().unwrap();
-                //     gl.bind_texture(
-                //         glow::TEXTURE_2D_MULTISAMPLE,
-                //         Some(ms_tex),
-                //     );
-                //     gl.tex_image_2d_multisample(
-                //         glow::TEXTURE_2D_MULTISAMPLE,
-                //         16 as i32,
-                //         glow::RGBA32F as i32,
-                //         window_size.0 as i32,
-                //         window_size.1 as i32,
-                //         false,
-                //     );
-                //     gl.bind_texture(glow::TEXTURE_2D_MULTISAMPLE, None);
-                //     gl.framebuffer_texture_2d(
-                //         glow::FRAMEBUFFER,
-                //         glow::COLOR_ATTACHMENT0,
-                //         glow::TEXTURE_2D_MULTISAMPLE,
-                //         Some(ms_tex),
-                //         0,
-                //     );
-                // }
-
                 ms_fbo = Some(gl.create_framebuffer().unwrap());
                 let ms_rbo = gl.create_renderbuffer().unwrap();
                 gl.bind_renderbuffer(glow::RENDERBUFFER, Some(ms_rbo));
