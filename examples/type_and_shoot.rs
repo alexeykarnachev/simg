@@ -23,7 +23,8 @@ const PLAYER_CIRCLE_RADIUS: f32 = 20.0;
 const MAX_N_ENEMIES: usize = 100;
 const ENEMY_CIRCLE_RADIUR: f32 = 20.0;
 
-const SPAWN_START_PERIOD: f32 = 100.0;
+const SPAWN_START_PERIOD: f32 = 2.0;
+const SPAWN_RADIUS: f32 = 400.0;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
@@ -147,16 +148,18 @@ impl Game {
             self.time += self.dt;
             dt -= GAME_DT;
 
-            self.update_input();
+            self.input.update();
             self.update_game();
         }
         self.prev_ticks = self.timer.ticks();
+        self.should_quit |= self.input.should_quit;
 
         self.update_renderer();
     }
 
-    fn update_input(&mut self) {
-        self.input.update();
+    fn update_game(&mut self) {
+        // ---------------------------------------------------------------
+        // Update text input
         if self.input.text_input.len() > 0 {
             self.text_input.push_str(&self.input.text_input);
             self.last_type_time = self.time;
@@ -165,17 +168,25 @@ impl Game {
             self.text_input.pop();
             self.last_type_time = self.time;
         }
-        self.should_quit |= self.input.should_quit;
-    }
 
-    fn update_game(&mut self) {
+        let mut is_text_submited = false;
+        if self.input.keycodes.is_just_pressed(Keycode::Return) {
+            is_text_submited = true;
+        }
+
         // ---------------------------------------------------------------
         // Update enemies
         let mut free_idx = -1;
         let mut is_all_dead = true;
+        let mut is_player_shot = false;
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
             if !enemy.is_alive && free_idx == -1 {
                 free_idx = idx as i32;
+            }
+
+            if is_text_submited && enemy.name == self.text_input {
+                is_player_shot = true;
+                enemy.is_alive = false;
             }
 
             if enemy.is_alive {
@@ -186,6 +197,7 @@ impl Game {
                 )
                 .is_some()
                 {
+                    // Kill or attack player here
                 } else {
                     let step = -enemy.circle.center.normalize()
                         * enemy.speed
@@ -195,14 +207,29 @@ impl Game {
             }
         }
 
+        // ---------------------------------------------------------------
+        // Update player
+        if is_text_submited && !is_player_shot {
+            // Player receive damage (text has been submited,
+            // but no enemy matched)
+        }
+
+        // ---------------------------------------------------------------
+        // Spawn new enemy
         if is_all_dead
             || (free_idx != -1
                 && self.time - self.prev_spawn_time >= self.spawn_period)
         {
-            let name = format!("Enemy {}", free_idx);
-            let position = get_rnd_unit_2d() * 200.0;
+            let name = format!("Enemy_{}", free_idx);
+            let position = get_rnd_unit_2d() * SPAWN_RADIUS;
             self.enemies[free_idx as usize].reset(name, position);
             self.prev_spawn_time = self.time;
+        }
+
+        // ---------------------------------------------------------------
+        // Clear text buffer if it has been submited
+        if is_text_submited {
+            self.text_input.clear();
         }
     }
 
@@ -227,12 +254,27 @@ impl Game {
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
             let mut pos = enemy.circle.get_top();
             pos.y += 10.0;
+
+            let mut n_matched = 0;
+            if self.text_input.len() > 0
+                && enemy.name.starts_with(&self.text_input)
+            {
+                n_matched = self.text_input.len();
+            }
+
+            let mut glyph_idx = 0;
             for glyph in self
                 .glyph_atlas_small
                 .iter_text_glyphs(Pivot::BotCenter(pos), &enemy.name)
             {
-                self.renderer
-                    .draw_glyph(glyph, Some(Color::gray(0.9, 1.0)));
+                let color = if glyph_idx < n_matched {
+                    Color::new(0.3, 0.9, 0.2, 1.0)
+                } else {
+                    Color::gray(0.9, 1.0)
+                };
+                glyph_idx += 1;
+
+                self.renderer.draw_glyph(glyph, Some(color));
             }
         }
 
