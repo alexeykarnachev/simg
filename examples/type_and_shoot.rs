@@ -18,6 +18,8 @@ const MSAA: i32 = 16;
 
 const GAME_DT: f32 = 0.005;
 
+const PAUSE_PERIOD: f32 = 5.0;
+
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 
@@ -32,7 +34,7 @@ const BULLET_MAX_TRAVEL_DIST: f32 = 1000.0;
 const N_ENEMIES_MAX: usize = 100;
 const ENEMY_CIRCLE_RADIUR: f32 = 15.0;
 
-const SPAWN_START_PERIOD: f32 = 1.0;
+const SPAWN_START_PERIOD: f32 = 2.0;
 const SPAWN_RADIUS: f32 = 400.0;
 const N_SPAWN_POSITIONS: usize = 10;
 
@@ -45,7 +47,9 @@ const CONTINUE_TEXT: &str = "Continue";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
-const CONSOLE_TEXT_COLOR: Color = Color { r: 0.9, g: 0.9, b: 0.9, a: 0.8 };
+const CONSOLE_TEXT_COLOR: Color = Color { r: 0.9, g: 0.9, b: 0.9, a: 1.0 };
+const CONSOLE_DIM_TEXT_COLOR: Color =
+    Color { r: 0.6, g: 0.6, b: 0.6, a: 1.0 };
 const MATCHED_TEXT_COLOR: Color = Color { r: 0.2, g: 1.0, b: 0.1, a: 1.0 };
 const PAUSE_SCREEN_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.3 };
 
@@ -168,6 +172,7 @@ struct Game {
     prev_spawn_time: f32,
     spawn_period: f32,
     last_type_time: f32,
+    last_pause_time: f32,
 }
 
 impl Game {
@@ -223,6 +228,7 @@ impl Game {
             prev_spawn_time: 0.0,
             spawn_period: SPAWN_START_PERIOD,
             last_type_time: 0.0,
+            last_pause_time: 0.0,
         }
     }
 
@@ -267,13 +273,16 @@ impl Game {
             self.text_input.clear();
 
             if text_input == PAUSE_TEXT {
-                self.state = GameState::Pause;
+                if self.can_pause() {
+                    self.state = GameState::Pause;
+                }
             } else if text_input == CONTINUE_TEXT {
                 self.state = GameState::Playing;
             }
         }
 
         if self.state == GameState::Pause {
+            self.last_pause_time = self.time;
             return;
         }
 
@@ -379,7 +388,7 @@ impl Game {
                 self.spawn_positions.shuffle(&mut rand::thread_rng());
             }
             let position = self.spawn_positions[idx];
-            let speed = 100.0;
+            let speed = 40.0;
             self.enemies[free_enemy_idx as usize].reset(
                 name.to_string(),
                 position,
@@ -477,23 +486,47 @@ impl Game {
         // Draw top bar icons and text
         let atlas = &self.glyph_atlas_small;
         let x = top_frame.get_center_x();
-        let y = top_frame.get_min_y() + 5.0;
+        let y = top_frame.get_min_y();
 
-        let text = if self.state == GameState::Playing {
-            PAUSE_TEXT
-        } else {
-            CONTINUE_TEXT
-        };
+        let (text, color, matched_color) =
+            if self.state == GameState::Playing {
+                let (color, matched_color) = if self.can_pause() {
+                    (CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+                } else {
+                    (CONSOLE_DIM_TEXT_COLOR, RED)
+                };
+                (PAUSE_TEXT, color, matched_color)
+            } else {
+                (CONTINUE_TEXT, CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+            };
 
-        draw_text_with_match(
+        let width = draw_text_with_match(
             atlas,
             &mut self.renderer,
-            Pivot::BotCenter(vector![x, y]),
+            Pivot::BotCenter(vector![x, y + 8.0]),
             text,
             &self.text_input,
-            CONSOLE_TEXT_COLOR,
-            MATCHED_TEXT_COLOR,
+            color,
+            matched_color,
         );
+
+        if self.state == GameState::Playing {
+            let p = (self.time - self.last_pause_time) / PAUSE_PERIOD;
+            let width = width * p.min(1.0);
+            let color = if p >= 1.0 {
+                GREEN
+            } else {
+                GREEN.with_alpha(0.4)
+            };
+            self.renderer.draw_rect(
+                Rectangle::from_bot_center(
+                    vector![x, y + 3.0],
+                    vector![width, 3.0],
+                ),
+                None,
+                Some(color),
+            );
+        }
 
         // ---------------------------------------------------------------
         // Draw console text input
@@ -516,8 +549,8 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw cursor rectangle
-        let time_since_last_type = self.time - self.last_type_time;
-        if (time_since_last_type / CURSOR_BLINK_PERIOD) as u32 % 2 == 0 {
+        let time_since_type = self.time - self.last_type_time;
+        if (time_since_type / CURSOR_BLINK_PERIOD) as u32 % 2 == 0 {
             self.renderer.draw_rect(
                 get_cursor_rect(&cursor, atlas),
                 None,
@@ -529,6 +562,10 @@ impl Game {
         // Finalize drawing
         self.renderer.end_drawing(CLEAR_COLOR, None);
         self.renderer.swap_window();
+    }
+
+    fn can_pause(&self) -> bool {
+        self.time - self.last_pause_time >= PAUSE_PERIOD
     }
 }
 

@@ -25,6 +25,15 @@ impl Color {
 
         color
     }
+
+    pub fn lerp(&self, k: f32, other: Color) -> Self {
+        Self {
+            r: k * self.r + (1.0 - k) * other.r,
+            g: k * self.g + (1.0 - k) * other.g,
+            b: k * self.b + (1.0 - k) * other.b,
+            a: k * self.a + (1.0 - k) * other.a,
+        }
+    }
 }
 
 pub const BLACK: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
