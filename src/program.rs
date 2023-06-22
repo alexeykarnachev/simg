@@ -13,10 +13,7 @@ pub struct Program {
 
 impl Program {
     pub fn new(idx: u32) -> Self {
-        Self {
-            idx,
-            args: HashMap::with_capacity(16),
-        }
+        Self { idx, args: HashMap::with_capacity(16) }
     }
 
     pub fn set_arg(&mut self, name: &str, arg: ProgramArg) {

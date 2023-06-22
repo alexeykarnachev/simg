@@ -228,12 +228,7 @@ impl BatchInfo {
         tex: Option<Texture>,
         transform: Matrix4<f32>,
     ) -> Self {
-        Self {
-            start,
-            count: 0,
-            tex,
-            transform,
-        }
+        Self { start, count: 0, tex, transform }
     }
 }
 
@@ -258,6 +253,7 @@ pub struct Renderer {
     positions_vbo: glow::NativeBuffer,
     texcoords_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
+    is_use_tex_vbo: glow::NativeBuffer,
 
     ms_fbo: Option<glow::NativeFramebuffer>,
 
@@ -267,6 +263,7 @@ pub struct Renderer {
     positions: [f32; MAX_N_VERTICES * 3],
     texcoords: [f32; MAX_N_VERTICES * 2],
     colors: [f32; MAX_N_VERTICES * 4],
+    is_use_tex: [u8; MAX_N_VERTICES],
 
     n_batches: usize,
     batch_infos: [BatchInfo; MAX_N_BATCHES],
@@ -337,6 +334,7 @@ impl Renderer {
         let positions_vbo;
         let texcoords_vbo;
         let colors_vbo;
+        let is_use_tex_vbo;
         let mut ms_fbo = None;
         let postfx_tex;
         let postfx_fbo;
@@ -378,6 +376,16 @@ impl Renderer {
             );
             gl.enable_vertex_attrib_array(2);
             gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
+
+            is_use_tex_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(is_use_tex_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<u8>() * 1 * MAX_N_VERTICES) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(3);
+            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_BYTE, 0, 0);
 
             // -----------------------------------------------------------
             // Multisample buffer
@@ -440,6 +448,7 @@ impl Renderer {
             positions_vbo,
             texcoords_vbo,
             colors_vbo,
+            is_use_tex_vbo,
 
             ms_fbo,
 
@@ -449,6 +458,7 @@ impl Renderer {
             positions: [0.0; MAX_N_VERTICES * 3],
             texcoords: [0.0; MAX_N_VERTICES * 2],
             colors: [0.0; MAX_N_VERTICES * 4],
+            is_use_tex: [0; MAX_N_VERTICES],
 
             n_batches: 0,
             batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
@@ -568,6 +578,9 @@ impl Renderer {
         if let Some(texcoord) = texcoord {
             self.texcoords[idx * 2 + 0] = texcoord.x;
             self.texcoords[idx * 2 + 1] = texcoord.y;
+            self.is_use_tex[idx] = 1;
+        } else {
+            self.is_use_tex[idx] = 0;
         }
 
         batch_info.count += 1;
@@ -734,6 +747,11 @@ impl Renderer {
                     self.colors_vbo,
                     &self.colors[start * 4..(start + count) * 4],
                 );
+                buffer_sub_data(
+                    &self.gl,
+                    self.is_use_tex_vbo,
+                    &self.is_use_tex[start * 1..(start + count) * 1],
+                );
 
                 self.program.set_uniform_matrix_4_f32(
                     &self.gl,
@@ -741,22 +759,10 @@ impl Renderer {
                     transform.as_slice(),
                 );
 
-                let mut use_tex = 0;
                 if let Some(tex) = tex {
                     tex.bind(&self.gl);
-                    self.program.set_uniform_1_i32(
-                        &self.gl,
-                        "u_tex.tex",
-                        0,
-                    );
-
-                    use_tex = 1;
+                    self.program.set_uniform_1_i32(&self.gl, "u_tex", 0);
                 }
-                self.program.set_uniform_1_u32(
-                    &self.gl,
-                    "u_tex.is_used",
-                    use_tex,
-                );
 
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
             }

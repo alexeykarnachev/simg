@@ -88,11 +88,7 @@ impl GlyphAtlas {
                 Vector2::new(metric.advance_width, metric.advance_height);
             let rect = Rectangle::from_bot_left(offset, size);
 
-            let glyph = Glyph {
-                texcoords,
-                rect,
-                advance,
-            };
+            let glyph = Glyph { texcoords, rect, advance };
             glyphs.push(glyph);
 
             let bitmap = &bitmaps[i_glyph];
@@ -131,7 +127,7 @@ impl GlyphAtlas {
         }
     }
 
-    fn get_text_size(&self, text: &str) -> Vector2<f32> {
+    pub fn get_text_size(&self, text: &str) -> Vector2<f32> {
         let mut width: f32 = 0.0;
         let mut height: f32 = 0.0;
         for symbol in text.chars() {

@@ -18,10 +18,14 @@ pub fn reflect(vec: &Vector2<f32>, normal: &Vector2<f32>) -> Vector2<f32> {
     vec - 2.0 * vec.dot(&normal) * normal
 }
 
-pub fn get_rnd_unit_2d() -> Vector2<f32> {
+pub fn get_unit_2d_by_random() -> Vector2<f32> {
     let mut rng = rand::thread_rng();
     let angle = rng.gen_range(-PI..=PI);
 
+    get_unit_2d_by_angle(angle)
+}
+
+pub fn get_unit_2d_by_angle(angle: f32) -> Vector2<f32> {
     Vector2::new(angle.cos(), angle.sin())
 }
 
@@ -164,6 +168,68 @@ pub fn get_circle_rectangle_mtv(
     }
 
     None
+}
+
+pub fn intersect_line_with_circle(
+    line: &Line,
+    circle: &Circle,
+) -> [Option<Vector2<f32>>; 2] {
+    let s = line.s;
+    let e = line.e;
+    let r = circle.radius;
+
+    let x1 = s.x;
+    let y1 = s.y;
+    let x2 = e.x;
+    let y2 = e.y;
+    let cx = circle.center.x;
+    let cy = circle.center.y;
+
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let a = dx * dx + dy * dy;
+    let b = 2.0 * (dx * (x1 - cx) + dy * (y1 - cy));
+    let c = cx * cx + cy * cy + x1 * x1 + y1 * y1
+        - 2.0 * (cx * x1 + cy * y1)
+        - r * r;
+
+    let det = b * b - 4.0 * a * c;
+    let mut t1 = 2.0;
+    let mut t2 = 2.0;
+    if det == 0.0 {
+        t1 = -b / (2.0 * a);
+    } else if det > 0.0 {
+        let det_sqrt = det.sqrt();
+        t1 = (-b + det_sqrt) / (2.0 * a);
+        t2 = (-b - det_sqrt) / (2.0 * a);
+    }
+
+    let mut point0 = None;
+    if t1 >= 0.0 && t1 <= 1.0 {
+        point0 = Some(Vector2::new(x1 + t1 * dx, y1 + t1 * dy));
+    }
+
+    let mut point1 = None;
+    if t2 >= 0.0 && t2 <= 1.0 {
+        point1 = Some(Vector2::new(x1 + t2 * dx, y1 + t2 * dy));
+    }
+
+    let mut points = [None, None];
+    if point0.is_some() && point1.is_none() {
+        points[0] = point0;
+    } else if point0.is_none() && point1.is_some() {
+        points[0] = point1;
+    } else if let (Some(point0), Some(point1)) = (point0, point1) {
+        if point0.metric_distance(&s) <= point1.metric_distance(&s) {
+            points[0] = Some(point0);
+            points[1] = Some(point1);
+        } else {
+            points[0] = Some(point1);
+            points[1] = Some(point0);
+        }
+    }
+
+    return points;
 }
 
 pub fn check_if_point_in_rectangle(

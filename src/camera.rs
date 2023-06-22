@@ -9,11 +9,7 @@ pub struct Camera2D {
 
 impl Camera2D {
     pub fn new(position: Vector2<f32>) -> Self {
-        Self {
-            position,
-            rotation: 0.0,
-            zoom: 1.0,
-        }
+        Self { position, rotation: 0.0, zoom: 1.0 }
     }
 
     pub fn get_view(&self) -> Matrix4<f32> {

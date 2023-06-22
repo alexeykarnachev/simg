@@ -1,4 +1,7 @@
+use core::f32::consts::PI;
+use nalgebra::vector;
 use nalgebra::Vector2;
+use rand::seq::SliceRandom;
 use sdl2::keyboard::Keycode;
 use simg::camera::Camera2D;
 use simg::color::*;
@@ -18,19 +21,38 @@ const GAME_DT: f32 = 0.005;
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 
-const PLAYER_CIRCLE_RADIUS: f32 = 20.0;
+const FRAME_TOP_SIZE: f32 = 50.0;
+const FRAME_BOT_SIZE: f32 = 50.0;
 
-const MAX_N_ENEMIES: usize = 100;
-const ENEMY_CIRCLE_RADIUR: f32 = 20.0;
+const PLAYER_CIRCLE_RADIUS: f32 = 15.0;
 
-const SPAWN_START_PERIOD: f32 = 2.0;
+const N_BULLETS_MAX: usize = 16;
+const BULLET_MAX_TRAVEL_DIST: f32 = 1000.0;
+
+const N_ENEMIES_MAX: usize = 100;
+const ENEMY_CIRCLE_RADIUR: f32 = 15.0;
+
+const SPAWN_START_PERIOD: f32 = 1.0;
 const SPAWN_RADIUS: f32 = 400.0;
+const N_SPAWN_POSITIONS: usize = 10;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
+
+const FONT_SMALL_SIZE: u32 = 20;
+
+const PAUSE_TEXT: &str = "Pause";
+const CONTINUE_TEXT: &str = "Continue";
+
+const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
+const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
+const CONSOLE_TEXT_COLOR: Color = Color { r: 0.9, g: 0.9, b: 0.9, a: 0.8 };
+const MATCHED_TEXT_COLOR: Color = Color { r: 0.2, g: 1.0, b: 0.1, a: 1.0 };
+const PAUSE_SCREEN_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.3 };
 
 pub const FONT: &[u8] = include_bytes!(
     "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
 );
+static WORDS: &'static str = include_str!("./assets/type_and_shoot/words");
 
 struct Player {
     circle: Circle,
@@ -44,6 +66,7 @@ impl Player {
     }
 }
 
+#[derive(Clone)]
 struct Enemy {
     is_alive: bool,
     name: String,
@@ -57,20 +80,69 @@ impl Default for Enemy {
             is_alive: false,
             name: String::new(),
             circle: Circle::zeros(),
-            speed: 20.0,
+            speed: 0.0,
         }
     }
 }
 
 impl Enemy {
-    pub fn reset(&mut self, name: String, position: Vector2<f32>) {
+    pub fn reset(
+        &mut self,
+        name: String,
+        position: Vector2<f32>,
+        speed: f32,
+    ) {
         self.is_alive = true;
         self.name = name;
+        self.speed = speed;
         self.circle = Circle::new(position, ENEMY_CIRCLE_RADIUR);
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+struct Bullet {
+    is_alive: bool,
+    curr_position: Vector2<f32>,
+    prev_position: Vector2<f32>,
+    velocity: Vector2<f32>,
+    damage: u32,
+}
+
+impl Bullet {
+    pub fn reset(
+        &mut self,
+        curr_position: Vector2<f32>,
+        velocity: Vector2<f32>,
+        damage: u32,
+    ) {
+        self.is_alive = true;
+        self.curr_position = curr_position;
+        self.prev_position = curr_position;
+        self.velocity = velocity;
+        self.damage = damage;
+    }
+}
+
+impl Default for Bullet {
+    fn default() -> Self {
+        Self {
+            is_alive: false,
+            curr_position: Vector2::zeros(),
+            prev_position: Vector2::zeros(),
+            velocity: Vector2::zeros(),
+            damage: 0,
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+enum GameState {
+    Playing,
+    Pause,
+}
+
 struct Game {
+    state: GameState,
     dt: f32,
     time: f32,
     prev_ticks: u32,
@@ -86,9 +158,13 @@ struct Game {
 
     camera: Camera2D,
     player: Player,
-    enemies: [Enemy; MAX_N_ENEMIES],
+    bullets: [Bullet; N_BULLETS_MAX],
+    enemies: [Enemy; N_ENEMIES_MAX],
+    spawn_positions: [Vector2<f32>; N_SPAWN_POSITIONS],
     text_input: String,
+    words: Vec<&'static str>,
 
+    n_spawned_enemies: usize,
     prev_spawn_time: f32,
     spawn_period: f32,
     last_type_time: f32,
@@ -107,11 +183,21 @@ impl Game {
             MSAA,
         );
 
-        let glyph_atlas_small = GlyphAtlas::new(FONT, 27);
+        let glyph_atlas_small = GlyphAtlas::new(FONT, FONT_SMALL_SIZE);
         let glyph_tex_small =
             renderer.load_texture_from_glyph_atlas(&glyph_atlas_small);
 
+        // Generate possible spawn positions
+        let angle_step = 2.0 * PI / N_SPAWN_POSITIONS as f32;
+        let mut spawn_positions = [Vector2::default(); N_SPAWN_POSITIONS];
+        for i in 0..N_SPAWN_POSITIONS {
+            let angle = angle_step * (i as f32 + 0.5);
+            let position = get_unit_2d_by_angle(angle) * SPAWN_RADIUS;
+            spawn_positions[i] = position;
+        }
+
         Self {
+            state: GameState::Playing,
             dt: 0.0,
             time: 0.0,
             prev_ticks: timer.ticks(),
@@ -127,9 +213,13 @@ impl Game {
 
             camera: Camera2D::new(Vector2::zeros()),
             player: Player::new(),
-            enemies: [(); MAX_N_ENEMIES].map(|_| Enemy::default()),
+            bullets: [Bullet::default(); N_BULLETS_MAX],
+            enemies: [(); N_ENEMIES_MAX].map(|_| Enemy::default()),
+            spawn_positions,
             text_input: String::with_capacity(32),
+            words: WORDS.lines().collect(),
 
+            n_spawned_enemies: 0,
             prev_spawn_time: 0.0,
             spawn_period: SPAWN_START_PERIOD,
             last_type_time: 0.0,
@@ -170,46 +260,109 @@ impl Game {
         }
 
         let mut is_text_submited = false;
+        let mut text_input = String::new();
         if self.input.keycodes.is_just_pressed(Keycode::Return) {
             is_text_submited = true;
+            text_input.push_str(&self.text_input);
+            self.text_input.clear();
+
+            if text_input == PAUSE_TEXT {
+                self.state = GameState::Pause;
+            } else if text_input == CONTINUE_TEXT {
+                self.state = GameState::Playing;
+            }
+        }
+
+        if self.state == GameState::Pause {
+            return;
         }
 
         // ---------------------------------------------------------------
-        // Update enemies
-        let mut free_idx = -1;
-        let mut is_all_dead = true;
-        let mut is_player_shot = false;
-        for (idx, enemy) in self.enemies.iter_mut().enumerate() {
-            if !enemy.is_alive && free_idx == -1 {
-                free_idx = idx as i32;
+        // Update bullets
+        let mut free_bullet_idx = -1;
+        for (idx, bullet) in self.bullets.iter_mut().enumerate() {
+            if !bullet.is_alive && free_bullet_idx == -1 {
+                free_bullet_idx = idx as i32;
             }
 
-            if is_text_submited && enemy.name == self.text_input {
-                is_player_shot = true;
-                enemy.is_alive = false;
-            }
-
-            if enemy.is_alive {
-                is_all_dead = false;
-                if get_circle_circle_mtv(
-                    &enemy.circle,
-                    &self.player.circle,
-                )
-                .is_some()
-                {
-                    // Kill or attack player here
+            if bullet.is_alive {
+                let travel_dist =
+                    bullet.curr_position.magnitude_squared().sqrt();
+                if travel_dist > BULLET_MAX_TRAVEL_DIST {
+                    bullet.is_alive = false;
                 } else {
-                    let step = -enemy.circle.center.normalize()
-                        * enemy.speed
-                        * self.dt;
-                    enemy.circle.center += step;
+                    let step = bullet.velocity * self.dt;
+                    bullet.prev_position = bullet.curr_position;
+                    bullet.curr_position += step;
                 }
             }
         }
 
         // ---------------------------------------------------------------
+        // Update enemies
+        let mut free_enemy_idx = -1;
+        let mut is_all_dead = true;
+        let mut player_shot_target = None;
+        for (idx, enemy) in self.enemies.iter_mut().enumerate() {
+            // Try receive bullet damage
+            if enemy.is_alive {
+                for bullet in
+                    self.bullets.iter_mut().filter(|b| b.is_alive)
+                {
+                    let line = Line::new(
+                        bullet.prev_position,
+                        bullet.curr_position,
+                    );
+                    if intersect_line_with_circle(&line, &enemy.circle)[0]
+                        .is_some()
+                    {
+                        bullet.is_alive = false;
+                        enemy.is_alive = false;
+                        break;
+                    }
+                }
+            }
+
+            if !enemy.is_alive {
+                if free_enemy_idx == -1 {
+                    free_enemy_idx = idx as i32;
+                }
+
+                continue;
+            }
+
+            is_all_dead = false;
+
+            if is_text_submited && enemy.name == text_input {
+                player_shot_target = Some(enemy.circle.center);
+            }
+
+            if get_circle_circle_mtv(&enemy.circle, &self.player.circle)
+                .is_some()
+            {
+                // Kill or attack player here
+            } else {
+                let dir = (self.player.circle.center
+                    - enemy.circle.center)
+                    .normalize();
+                let step = dir * enemy.speed * self.dt;
+                enemy.circle.center += step;
+            }
+        }
+
+        // ---------------------------------------------------------------
         // Update player
-        if is_text_submited && !is_player_shot {
+        if let (Some(target), true) =
+            (player_shot_target, free_bullet_idx != -1)
+        {
+            let velocity = target.normalize() * 2000.0;
+            let damage = 1;
+            self.bullets[free_bullet_idx as usize].reset(
+                self.player.circle.center,
+                velocity,
+                damage,
+            );
+        } else if is_text_submited && player_shot_target.is_none() {
             // Player receive damage (text has been submited,
             // but no enemy matched)
         }
@@ -217,31 +370,48 @@ impl Game {
         // ---------------------------------------------------------------
         // Spawn new enemy
         if is_all_dead
-            || (free_idx != -1
+            || (free_enemy_idx != -1
                 && self.time - self.prev_spawn_time >= self.spawn_period)
         {
-            let name = format!("Enemy_{}", free_idx);
-            let position = get_rnd_unit_2d() * SPAWN_RADIUS;
-            self.enemies[free_idx as usize].reset(name, position);
+            let name = self.words.choose(&mut rand::thread_rng()).unwrap();
+            let idx = self.n_spawned_enemies % self.spawn_positions.len();
+            if idx == 0 {
+                self.spawn_positions.shuffle(&mut rand::thread_rng());
+            }
+            let position = self.spawn_positions[idx];
+            let speed = 100.0;
+            self.enemies[free_enemy_idx as usize].reset(
+                name.to_string(),
+                position,
+                speed,
+            );
             self.prev_spawn_time = self.time;
-        }
-
-        // ---------------------------------------------------------------
-        // Clear text buffer if it has been submited
-        if is_text_submited {
-            self.text_input.clear();
+            self.n_spawned_enemies += 1;
         }
     }
 
     fn update_renderer(&mut self) {
         // ---------------------------------------------------------------
-        // Draw player and enemies
+        // Draw player, bullets, enemies
         self.renderer.start_new_batch(Proj2D(self.camera), None);
-        self.renderer
-            .draw_circle(self.player.circle, None, Some(RED));
+
+        self.renderer.draw_circle(
+            self.player.circle,
+            None,
+            Some(Color::new(0.3, 0.5, 0.0, 1.0)),
+        );
 
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
-            self.renderer.draw_circle(enemy.circle, None, Some(YELLOW));
+            self.renderer.draw_circle(
+                enemy.circle,
+                None,
+                Some(Color::new(0.5, 0.3, 0.0, 1.0)),
+            );
+        }
+
+        for bullet in self.bullets.iter().filter(|b| b.is_alive) {
+            let circle = Circle::new(bullet.curr_position, 5.0);
+            self.renderer.draw_circle(circle, None, Some(RED));
         }
 
         // ---------------------------------------------------------------
@@ -252,76 +422,174 @@ impl Game {
         );
 
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
-            let mut pos = enemy.circle.get_top();
-            pos.y += 10.0;
+            let mut position = enemy.circle.get_top();
+            position.y += 10.0;
 
-            let mut n_matched = 0;
-            if self.text_input.len() > 0
-                && enemy.name.starts_with(&self.text_input)
-            {
-                n_matched = self.text_input.len();
-            }
+            // Draw the text rectangle
+            let mut size =
+                self.glyph_atlas_small.get_text_size(&enemy.name);
+            size.y = self.glyph_atlas_small.font_size as f32;
+            let rect = Rectangle::from_bot_center(position, size);
+            self.renderer.draw_rect(rect, None, Some(BLACK));
 
-            let mut glyph_idx = 0;
-            for glyph in self
-                .glyph_atlas_small
-                .iter_text_glyphs(Pivot::BotCenter(pos), &enemy.name)
-            {
-                let color = if glyph_idx < n_matched {
-                    Color::new(0.3, 0.9, 0.2, 1.0)
-                } else {
-                    Color::gray(0.9, 1.0)
-                };
-                glyph_idx += 1;
-
-                self.renderer.draw_glyph(glyph, Some(color));
-            }
+            // Draw the actual glyphs
+            draw_text_with_match(
+                &self.glyph_atlas_small,
+                &mut self.renderer,
+                Pivot::BotCenter(position),
+                &enemy.name,
+                &self.text_input,
+                CONSOLE_TEXT_COLOR,
+                MATCHED_TEXT_COLOR,
+            );
         }
 
         // ---------------------------------------------------------------
-        // Draw text input
+        // Draw pause dim rect (if paused)
         self.renderer
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
 
-        let atlas = &self.glyph_atlas_small;
-        let color = Color::gray(0.9, 1.0);
-        let mut cursor = Vector2::new(20.0, 20.0);
-
-        let pivot = Pivot::BotLeft(cursor);
-        for glyph in atlas.iter_text_glyphs(pivot, "> ") {
-            cursor += glyph.advance;
-            self.renderer.draw_glyph(glyph, Some(color));
-        }
-
-        let pivot = Pivot::BotLeft(cursor);
-        for glyph in atlas.iter_text_glyphs(pivot, &self.text_input) {
-            cursor += glyph.advance;
-            self.renderer.draw_glyph(glyph, Some(color));
+        if self.state == GameState::Pause {
+            self.renderer.draw_rect(
+                Rectangle::from_bot_left(
+                    Vector2::zeros(),
+                    vector![WINDOW_WIDTH, WINDOW_HEIGHT],
+                ),
+                None,
+                Some(PAUSE_SCREEN_COLOR),
+            );
         }
 
         // ---------------------------------------------------------------
-        // Draw cursor rectangle
-        if ((self.time - self.last_type_time) / CURSOR_BLINK_PERIOD) as u32
-            % 2
-            == 0
-        {
-            self.renderer.start_new_batch(ProjScreen, None);
+        // Draw frame
+        let top_frame = Rectangle::from_top_left(
+            Vector2::new(0.0, WINDOW_HEIGHT),
+            Vector2::new(WINDOW_WIDTH, FRAME_TOP_SIZE),
+        );
+        let bot_frame = Rectangle::from_bot_left(
+            Vector2::zeros(),
+            Vector2::new(WINDOW_WIDTH, FRAME_BOT_SIZE),
+        );
+        self.renderer.draw_rect(top_frame, None, Some(FRAME_COLOR));
+        self.renderer.draw_rect(bot_frame, None, Some(FRAME_COLOR));
 
-            let cursor_rect = Rectangle::from_bot_left(
-                Vector2::new(cursor.x, cursor.y + atlas.glyph_descent),
-                Vector2::new(
-                    atlas.font_size as f32 / 2.0,
-                    atlas.glyph_ascent - atlas.glyph_descent,
-                ),
+        // ---------------------------------------------------------------
+        // Draw top bar icons and text
+        let atlas = &self.glyph_atlas_small;
+        let x = top_frame.get_center_x();
+        let y = top_frame.get_min_y() + 5.0;
+
+        let text = if self.state == GameState::Playing {
+            PAUSE_TEXT
+        } else {
+            CONTINUE_TEXT
+        };
+
+        draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotCenter(vector![x, y]),
+            text,
+            &self.text_input,
+            CONSOLE_TEXT_COLOR,
+            MATCHED_TEXT_COLOR,
+        );
+
+        // ---------------------------------------------------------------
+        // Draw console text input
+        let mut cursor = Vector2::new(20.0, 20.0);
+        cursor.x += draw_text(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotLeft(cursor),
+            "> ",
+            CONSOLE_TEXT_COLOR,
+        );
+
+        cursor.x += draw_text(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotLeft(cursor),
+            &self.text_input,
+            CONSOLE_TEXT_COLOR,
+        );
+
+        // ---------------------------------------------------------------
+        // Draw cursor rectangle
+        let time_since_last_type = self.time - self.last_type_time;
+        if (time_since_last_type / CURSOR_BLINK_PERIOD) as u32 % 2 == 0 {
+            self.renderer.draw_rect(
+                get_cursor_rect(&cursor, atlas),
+                None,
+                Some(CONSOLE_TEXT_COLOR),
             );
-            self.renderer.draw_rect(cursor_rect, None, Some(color));
         }
 
         // ---------------------------------------------------------------
         // Finalize drawing
-        self.renderer.end_drawing(Color::gray(0.1, 1.0), None);
+        self.renderer.end_drawing(CLEAR_COLOR, None);
         self.renderer.swap_window();
     }
+}
+
+fn draw_text(
+    glyph_atlas: &GlyphAtlas,
+    renderer: &mut Renderer,
+    pivot: Pivot,
+    text: &str,
+    text_color: Color,
+) -> f32 {
+    let mut advance = 0.0;
+    for glyph in glyph_atlas.iter_text_glyphs(pivot, text) {
+        advance += glyph.advance.x;
+        renderer.draw_glyph(glyph, Some(text_color));
+    }
+
+    advance
+}
+
+fn draw_text_with_match(
+    glyph_atlas: &GlyphAtlas,
+    renderer: &mut Renderer,
+    pivot: Pivot,
+    text: &str,
+    to_match: &str,
+    text_color: Color,
+    match_color: Color,
+) -> f32 {
+    let mut n_matched = 0;
+    if to_match.len() > 0 && text.starts_with(to_match) {
+        n_matched = to_match.len();
+    }
+
+    let mut advance = 0.0;
+    let mut glyph_idx = 0;
+    for glyph in glyph_atlas.iter_text_glyphs(pivot, text) {
+        let color = if glyph_idx < n_matched {
+            match_color
+        } else {
+            text_color
+        };
+        glyph_idx += 1;
+
+        advance += glyph.advance.x;
+        renderer.draw_glyph(glyph, Some(color));
+    }
+
+    advance
+}
+
+fn get_cursor_rect(
+    cursor: &Vector2<f32>,
+    glyph_atlas: &GlyphAtlas,
+) -> Rectangle {
+    Rectangle::from_bot_left(
+        Vector2::new(cursor.x, cursor.y + glyph_atlas.glyph_descent),
+        Vector2::new(
+            glyph_atlas.font_size as f32 / 2.0,
+            glyph_atlas.glyph_ascent - glyph_atlas.glyph_descent,
+        ),
+    )
 }
 
 pub fn main() {

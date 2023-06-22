@@ -23,6 +23,18 @@ const UNIT_CIRCLE_POINTS: [Vector2<f32>; CIRCLE_N_TRIANGLES] = [
 ];
 
 #[derive(Clone, Copy)]
+pub struct Line {
+    pub s: Vector2<f32>,
+    pub e: Vector2<f32>,
+}
+
+impl Line {
+    pub fn new(s: Vector2<f32>, e: Vector2<f32>) -> Self {
+        Self { s, e }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Triangle {
     pub a: Vector2<f32>,
     pub b: Vector2<f32>,
@@ -160,10 +172,7 @@ impl Rectangle {
         bot_left -= size * 0.5;
         let top_right = bot_left + size;
 
-        Self {
-            bot_left,
-            top_right,
-        }
+        Self { bot_left, top_right }
     }
 
     pub fn from_top_left(
@@ -174,10 +183,7 @@ impl Rectangle {
         bot_left.y -= size.y;
         let top_right = bot_left + size;
 
-        Self {
-            bot_left,
-            top_right,
-        }
+        Self { bot_left, top_right }
     }
 
     pub fn from_bot_left(
@@ -186,10 +192,7 @@ impl Rectangle {
     ) -> Self {
         let top_right = bot_left + size;
 
-        Self {
-            bot_left,
-            top_right,
-        }
+        Self { bot_left, top_right }
     }
 
     pub fn from_bot_center(
@@ -200,10 +203,7 @@ impl Rectangle {
         bot_left.x -= 0.5 * size.x;
         let top_right = bot_left + size;
 
-        Self {
-            bot_left,
-            top_right,
-        }
+        Self { bot_left, top_right }
     }
 
     pub fn get_triangles(&self) -> [Triangle; 2] {
@@ -239,10 +239,7 @@ pub struct Circle {
 
 impl Circle {
     pub fn zeros() -> Self {
-        Self {
-            center: Vector2::zeros(),
-            radius: 0.0,
-        }
+        Self { center: Vector2::zeros(), radius: 0.0 }
     }
     pub fn new(center: Vector2<f32>, radius: f32) -> Self {
         Self { center, radius }
