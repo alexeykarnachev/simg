@@ -5,7 +5,7 @@ use rand::seq::SliceRandom;
 use sdl2::keyboard::Keycode;
 use simg::camera::Camera2D;
 use simg::color::*;
-use simg::common::Pivot;
+use simg::common::*;
 use simg::geometry::*;
 use simg::glyph_atlas::GlyphAtlas;
 use simg::input::Input;
@@ -24,24 +24,27 @@ const WINDOW_HEIGHT: f32 = 600.0;
 const FRAME_TOP_SIZE: f32 = 50.0;
 const FRAME_BOT_SIZE: f32 = 50.0;
 
-const PLAYER_CIRCLE_RADIUS: f32 = 15.0;
+const SKILL_RECT_WIDTH: f32 = 110.0;
+const SKILL_RECT_HEIGHT: f32 = 50.0;
 
-const N_BULLETS_MAX: usize = 32;
-const BULLET_MAX_TRAVEL_DIST: f32 = 1000.0;
+const PLAYER_CIRCLE_RADIUS: f32 = 10.0;
+const ENEMY_CIRCLE_RADIUR: f32 = 10.0;
 
 const N_ENEMIES_MAX: usize = 1024;
-const ENEMY_CIRCLE_RADIUR: f32 = 15.0;
+const N_BULLETS_MAX: usize = 32;
+const BULLET_MAX_TRAVEL_DIST: f32 = 1000.0;
 
 const SPAWN_RADIUS: f32 = 400.0;
 const N_SPAWN_POSITIONS: usize = 10;
 
 const LEVEL0_N_ENEMIES_TO_SPAWN: usize = 2;
 const LEVEL0_SPAWN_PER_MINUTE: f32 = 20.0;
+const LEVEL0_ENEMY_SPEED: f32 = 20.0;
 
 const LEVEL0_PAUSE_PERIOD: f32 = 5.0;
 const LEVEL0_KNOCKBACK_PERIOD: f32 = 5.0;
-const LEVEL0_FREEZE_PERIOD: f32 = 5.0;
-const LEVEL0_FREEZE_DURATION: f32 = 3.0;
+const LEVEL0_BLIZZARD_PERIOD: f32 = 5.0;
+const LEVEL0_BLIZZARD_DURATION: f32 = 3.0;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
@@ -52,7 +55,7 @@ const CONTINUE_TEXT: &str = "Continue";
 const START_TEXT: &str = "Start";
 const RESTART_TEXT: &str = "Restart";
 const KNOCKBACK_TEXT: &str = "Knockback";
-const FREEZE_TEXT: &str = "Freeze";
+const BLIZZARD_TEXT: &str = "Blizzard";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
@@ -196,9 +199,9 @@ struct Game {
     knockback_period: f32,
     last_knockback_time: f32,
 
-    freeze_period: f32,
-    last_freeze_time: f32,
-    freeze_duration: f32,
+    blizzard_period: f32,
+    last_blizzard_time: f32,
+    blizzard_duration: f32,
 }
 
 impl Game {
@@ -267,9 +270,9 @@ impl Game {
             knockback_period: LEVEL0_KNOCKBACK_PERIOD,
             last_knockback_time: 0.0,
 
-            freeze_period: LEVEL0_FREEZE_PERIOD,
-            last_freeze_time: -LEVEL0_FREEZE_DURATION,
-            freeze_duration: LEVEL0_FREEZE_DURATION,
+            blizzard_period: LEVEL0_BLIZZARD_PERIOD,
+            last_blizzard_time: -LEVEL0_BLIZZARD_DURATION,
+            blizzard_duration: LEVEL0_BLIZZARD_DURATION,
         }
     }
 
@@ -299,9 +302,9 @@ impl Game {
         self.last_pause_time = 0.0;
         self.knockback_period = LEVEL0_KNOCKBACK_PERIOD;
         self.last_knockback_time = 0.0;
-        self.freeze_period = LEVEL0_FREEZE_PERIOD;
-        self.last_freeze_time = -LEVEL0_FREEZE_DURATION;
-        self.freeze_duration = LEVEL0_FREEZE_DURATION;
+        self.blizzard_period = LEVEL0_BLIZZARD_PERIOD;
+        self.last_blizzard_time = -LEVEL0_BLIZZARD_DURATION;
+        self.blizzard_duration = LEVEL0_BLIZZARD_DURATION;
     }
 
     pub fn update(&mut self) {
@@ -392,8 +395,8 @@ impl Game {
         // Update skills
         let mut is_knockback = false;
         if let Some(text) = self.submited_text_input.as_ref() {
-            if self.can_freeze() && text == FREEZE_TEXT {
-                self.last_freeze_time = self.playing_time;
+            if self.can_blizzard() && text == BLIZZARD_TEXT {
+                self.last_blizzard_time = self.playing_time;
             } else if self.can_knockback() && text == KNOCKBACK_TEXT {
                 self.last_knockback_time = self.playing_time;
                 is_knockback = true;
@@ -427,7 +430,7 @@ impl Game {
         let mut is_all_dead = true;
         let mut player_shot_target = None;
         let mut is_loss = false;
-        let is_frozen = self.is_frozen();
+        let is_blizzard = self.is_blizzard();
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
             // Try receive bullet damage
             if enemy.is_alive {
@@ -469,7 +472,7 @@ impl Game {
                 .is_some()
             {
                 is_loss = true;
-            } else if !is_frozen {
+            } else if !is_blizzard {
                 let dir = (self.player.circle.center
                     - enemy.circle.center)
                     .normalize();
@@ -506,11 +509,10 @@ impl Game {
                 self.spawn_positions.shuffle(&mut rand::thread_rng());
             }
             let position = self.spawn_positions[idx];
-            let speed = 40.0;
             self.enemies[free_enemy_idx as usize].reset(
                 name.to_string(),
                 position,
-                speed,
+                LEVEL0_ENEMY_SPEED,
             );
             self.prev_spawn_time = self.playing_time;
             self.n_enemies_spawned += 1;
@@ -563,7 +565,7 @@ impl Game {
             Some(Color::new(0.3, 0.5, 0.0, 1.0)),
         );
 
-        let color = if self.is_frozen() {
+        let color = if self.is_blizzard() {
             Color::new(0.2, 0.3, 0.6, 1.0)
         } else {
             Color::new(0.5, 0.3, 0.0, 1.0)
@@ -599,7 +601,7 @@ impl Game {
             draw_text_with_match(
                 &self.glyph_atlas_small,
                 &mut self.renderer,
-                Pivot::BotCenter(position),
+                Pivot::bot_center(position),
                 &enemy.name,
                 &self.text_input,
                 CONSOLE_TEXT_COLOR,
@@ -624,7 +626,7 @@ impl Game {
         let rect = draw_text(
             atlas,
             &mut self.renderer,
-            Pivot::BotLeft(vector![bot_left.x + 8.0, bot_left.y + 8.0]),
+            Pivot::bot_left(vector![bot_left.x + 8.0, bot_left.y + 8.0]),
             &format!("Level: {}", self.level_idx),
             CONSOLE_TEXT_COLOR,
         );
@@ -638,86 +640,31 @@ impl Game {
         self.renderer.draw_rect(rect, None, Some(RED));
 
         // ---------------------------------------------------------------
-        // Draw Freeze skill
-        let bot_right = top_frame.get_bot_right();
-        let (p, bar_color, text_color, matched_color) = if self.is_frozen()
-        {
-            let p = 1.0
-                - (self.playing_time - self.last_freeze_time)
-                    / self.freeze_duration;
-            (p, GREEN, CONSOLE_DIM_TEXT_COLOR, RED)
-        } else {
-            let mut p = (self.playing_time
-                - self.last_freeze_time
-                - self.freeze_duration)
-                / self.freeze_period;
-            p = p.min(1.0);
-
-            let (bar_color, text_color, matched_color) = if p >= 1.0 {
-                (GREEN, CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
-            } else {
-                (GREEN.with_alpha(0.4), CONSOLE_DIM_TEXT_COLOR, RED)
-            };
-
-            (p, bar_color, text_color, matched_color)
-        };
-
-        let rect = draw_text_with_match(
-            atlas,
+        // Draw Blizzard skill
+        let blizzard_rect = draw_skill(
+            &self.glyph_atlas_small,
             &mut self.renderer,
-            Pivot::BotRight(vector![bot_right.x - 8.0, bot_right.y + 8.0]),
-            FREEZE_TEXT,
+            Pivot::bot_right(top_frame.get_bot_right()),
+            BLIZZARD_TEXT,
             &self.text_input,
-            text_color,
-            matched_color,
+            self.playing_time,
+            self.last_blizzard_time,
+            self.blizzard_duration,
+            self.blizzard_period,
         );
-        let bot_center = rect.get_bot_center();
 
-        self.renderer.draw_rect(
-            Rectangle::from_top_center(
-                vector![bot_center.x, bot_center.y - 3.0],
-                vector![p * rect.get_width(), 3.0],
-            ),
-            None,
-            Some(bar_color),
-        );
         // ---------------------------------------------------------------
         // Draw Knockback skill
-        let bot_left = rect.get_bot_left();
-
-        let (color, matched_color) = if self.can_knockback() {
-            (CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
-        } else {
-            (CONSOLE_DIM_TEXT_COLOR, RED)
-        };
-
-        let rect = draw_text_with_match(
-            atlas,
+        draw_skill(
+            &self.glyph_atlas_small,
             &mut self.renderer,
-            Pivot::BotRight(vector![bot_left.x - 15.0, bot_left.y]),
+            Pivot::bot_right(blizzard_rect.get_bot_left()),
             KNOCKBACK_TEXT,
             &self.text_input,
-            color,
-            matched_color,
-        );
-
-        let mut p = (self.playing_time - self.last_knockback_time)
-            / self.knockback_period;
-        p = p.min(1.0);
-        let color = if p >= 1.0 {
-            GREEN
-        } else {
-            GREEN.with_alpha(0.4)
-        };
-        let bot_center = rect.get_bot_center();
-
-        self.renderer.draw_rect(
-            Rectangle::from_top_center(
-                vector![bot_center.x, bot_center.y - 3.0],
-                vector![p * rect.get_width(), 3.0],
-            ),
-            None,
-            Some(color),
+            self.playing_time,
+            self.last_knockback_time,
+            0.0,
+            self.knockback_period,
         );
 
         // ---------------------------------------------------------------
@@ -726,7 +673,7 @@ impl Game {
         cursor.x += draw_text(
             atlas,
             &mut self.renderer,
-            Pivot::BotLeft(cursor),
+            Pivot::bot_left(cursor),
             "> ",
             CONSOLE_TEXT_COLOR,
         )
@@ -735,7 +682,7 @@ impl Game {
         cursor.x += draw_text(
             atlas,
             &mut self.renderer,
-            Pivot::BotLeft(cursor),
+            Pivot::bot_left(cursor),
             &self.text_input,
             CONSOLE_TEXT_COLOR,
         )
@@ -769,7 +716,7 @@ impl Game {
         draw_text_with_match(
             atlas,
             &mut self.renderer,
-            Pivot::BotCenter(vector![x, y + 8.0]),
+            Pivot::bot_center(vector![x, y + 8.0]),
             START_TEXT,
             &self.text_input,
             CONSOLE_TEXT_COLOR,
@@ -781,46 +728,19 @@ impl Game {
         self.renderer
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
 
-        let atlas = &self.glyph_atlas_small;
-        let top_frame = self.get_top_frame_rect();
-
         // ---------------------------------------------------------------
         // Draw Pause skill
-        let x = top_frame.get_center_x();
-        let y = top_frame.get_min_y();
-
-        let (color, matched_color) = if self.can_pause() {
-            (CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
-        } else {
-            (CONSOLE_DIM_TEXT_COLOR, RED)
-        };
-
-        let width = draw_text_with_match(
-            atlas,
+        let top_frame = self.get_top_frame_rect();
+        draw_skill(
+            &self.glyph_atlas_small,
             &mut self.renderer,
-            Pivot::BotCenter(vector![x, y + 8.0]),
+            Pivot::bot_center(top_frame.get_bot_center()),
             PAUSE_TEXT,
             &self.text_input,
-            color,
-            matched_color,
-        )
-        .get_width();
-
-        let p =
-            (self.playing_time - self.last_pause_time) / self.pause_period;
-        let width = width * p.min(1.0);
-        let color = if p >= 1.0 {
-            GREEN
-        } else {
-            GREEN.with_alpha(0.4)
-        };
-        self.renderer.draw_rect(
-            Rectangle::from_bot_center(
-                vector![x, y + 3.0],
-                vector![width, 3.0],
-            ),
-            None,
-            Some(color),
+            self.playing_time,
+            self.last_pause_time,
+            0.0,
+            self.pause_period,
         );
     }
 
@@ -840,7 +760,7 @@ impl Game {
         draw_text_with_match(
             atlas,
             &mut self.renderer,
-            Pivot::BotCenter(vector![x, y + 8.0]),
+            Pivot::bot_center(vector![x, y + 8.0]),
             CONTINUE_TEXT,
             &self.text_input,
             CONSOLE_TEXT_COLOR,
@@ -864,7 +784,7 @@ impl Game {
         draw_text_with_match(
             atlas,
             &mut self.renderer,
-            Pivot::BotCenter(vector![x, y + 8.0]),
+            Pivot::bot_center(vector![x, y + 8.0]),
             RESTART_TEXT,
             &self.text_input,
             CONSOLE_TEXT_COLOR,
@@ -910,13 +830,14 @@ impl Game {
             >= self.knockback_period
     }
 
-    fn can_freeze(&self) -> bool {
-        self.playing_time - self.last_freeze_time
-            >= (self.freeze_period + self.freeze_duration)
+    fn can_blizzard(&self) -> bool {
+        self.playing_time - self.last_blizzard_time
+            >= (self.blizzard_period + self.blizzard_duration)
     }
 
-    fn is_frozen(&self) -> bool {
-        self.playing_time - self.last_freeze_time <= self.freeze_duration
+    fn is_blizzard(&self) -> bool {
+        self.playing_time - self.last_blizzard_time
+            <= self.blizzard_duration
     }
 
     fn get_top_frame_rect(&self) -> Rectangle {
@@ -991,6 +912,62 @@ fn draw_text_with_match(
     }
 
     Rectangle::new(vector![min_x, min_y], vector![max_x, max_y])
+}
+
+fn draw_skill(
+    glyph_atlas: &GlyphAtlas,
+    renderer: &mut Renderer,
+    pivot: Pivot,
+    text: &str,
+    to_match: &str,
+    curr_time: f32,
+    last_use_time: f32,
+    duration: f32,
+    period: f32,
+) -> Rectangle {
+    let is_active = curr_time - last_use_time <= duration;
+    let (p, bar_color, text_color, matched_color) = if is_active {
+        let p = 1.0 - (curr_time - last_use_time) / duration;
+
+        (p, GREEN, CONSOLE_DIM_TEXT_COLOR, RED)
+    } else {
+        let mut p = (curr_time - last_use_time - duration) / period;
+        p = p.min(1.0);
+
+        let (bar_color, text_color, matched_color) = if p >= 1.0 {
+            (GREEN, CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+        } else {
+            (GREEN.with_alpha(0.4), CONSOLE_DIM_TEXT_COLOR, RED)
+        };
+
+        (p, bar_color, text_color, matched_color)
+    };
+
+    let size = vector![SKILL_RECT_WIDTH, SKILL_RECT_HEIGHT];
+    let rect = Rectangle::from_pivot(pivot, size);
+    let bot_center = rect.get_bot_center();
+
+    let bar_width = p * (rect.get_width() - 10.0);
+    let bar_rect = Rectangle::from_bot_center(
+        vector![bot_center.x, bot_center.y + 3.0],
+        vector![bar_width, 3.0],
+    );
+    let text_pos = vector![bot_center.x, bot_center.y + 9.0];
+    let text_pivot = Pivot::bot_center(text_pos);
+
+    renderer.draw_rect(bar_rect, None, Some(bar_color));
+
+    draw_text_with_match(
+        glyph_atlas,
+        renderer,
+        text_pivot,
+        text,
+        to_match,
+        text_color,
+        matched_color,
+    );
+
+    rect
 }
 
 fn get_cursor_rect(

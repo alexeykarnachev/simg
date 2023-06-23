@@ -1,3 +1,4 @@
+use crate::common::*;
 use std::ops::AddAssign;
 
 use nalgebra::Vector2;
@@ -178,6 +179,22 @@ impl Rectangle {
         left_center
     }
 
+    pub fn from_pivot(pivot: Pivot, size: Vector2<f32>) -> Self {
+        use PivotType::*;
+
+        match pivot.ty {
+            BotLeft => Self::from_bot_left(pivot.p, size),
+            TopLeft => Self::from_top_left(pivot.p, size),
+            BotRight => Self::from_bot_right(pivot.p, size),
+            TopRight => Self::from_top_right(pivot.p, size),
+            Center => Self::from_center(pivot.p, size),
+            TopCenter => Self::from_top_center(pivot.p, size),
+            BotCenter => Self::from_bot_center(pivot.p, size),
+            LeftCenter => Self::from_left_center(pivot.p, size),
+            RightCenter => Self::from_right_center(pivot.p, size),
+        }
+    }
+
     pub fn from_center(center: Vector2<f32>, size: Vector2<f32>) -> Self {
         let mut bot_left = center;
         bot_left -= size * 0.5;
@@ -186,11 +203,22 @@ impl Rectangle {
     }
 
     pub fn from_left_center(
-        center_left: Vector2<f32>,
+        left_center: Vector2<f32>,
         size: Vector2<f32>,
     ) -> Self {
-        let mut bot_left = center_left;
+        let mut bot_left = left_center;
         bot_left.y -= size.y * 0.5;
+
+        Self::from_bot_left(bot_left, size)
+    }
+
+    pub fn from_right_center(
+        right_center: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let mut bot_left = right_center;
+        bot_left.y -= size.y * 0.5;
+        bot_left.x -= size.x;
 
         Self::from_bot_left(bot_left, size)
     }
@@ -201,6 +229,16 @@ impl Rectangle {
     ) -> Self {
         let mut bot_left = top_left;
         bot_left.y -= size.y;
+
+        Self::from_bot_left(bot_left, size)
+    }
+
+    pub fn from_top_right(
+        top_right: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let mut bot_left = top_right;
+        bot_left -= size;
 
         Self::from_bot_left(bot_left, size)
     }
@@ -223,6 +261,16 @@ impl Rectangle {
         let top_right = bot_left + size;
 
         Self { bot_left, top_right }
+    }
+
+    pub fn from_bot_right(
+        bot_right: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let mut bot_left = bot_right;
+        bot_left.x -= size.x;
+
+        Self::from_bot_left(bot_left, size)
     }
 
     pub fn from_bot_center(

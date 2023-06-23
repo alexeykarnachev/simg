@@ -1,4 +1,4 @@
-use crate::common::Pivot;
+use crate::common::*;
 use crate::shapes::Rectangle;
 use fontdue;
 use nalgebra::Vector2;
@@ -141,27 +141,27 @@ impl GlyphAtlas {
 
     pub fn iter_text_glyphs<'a>(
         &'a self,
-        pivot: Pivot,
+        mut pivot: Pivot,
         text: &'a str,
     ) -> impl IntoIterator<Item = Glyph> + 'a {
-        use Pivot::*;
+        use PivotType::*;
 
         let size = self.get_text_size(text);
-        let mut cursor = match pivot {
-            BotLeft(pos) => pos,
-            Center(pos) => pos - size * 0.5,
-            TopCenter(mut pos) => {
-                pos.x -= size.x * 0.5;
-                pos.y -= size.y;
-                pos
+        let mut cursor = match pivot.ty {
+            BotLeft => pivot.p,
+            Center => pivot.p - size * 0.5,
+            TopCenter => {
+                pivot.p.x -= size.x * 0.5;
+                pivot.p.y -= size.y;
+                pivot.p
             }
-            BotCenter(mut pos) => {
-                pos.x -= size.x * 0.5;
-                pos
+            BotCenter => {
+                pivot.p.x -= size.x * 0.5;
+                pivot.p
             }
-            BotRight(mut pos) => {
-                pos.x -= size.x;
-                pos
+            BotRight => {
+                pivot.p.x -= size.x;
+                pivot.p
             }
             _ => {
                 todo!()
