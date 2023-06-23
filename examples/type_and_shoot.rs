@@ -28,15 +28,17 @@ const FRAME_BOT_SIZE: f32 = 50.0;
 
 const PLAYER_CIRCLE_RADIUS: f32 = 15.0;
 
-const N_BULLETS_MAX: usize = 16;
+const N_BULLETS_MAX: usize = 32;
 const BULLET_MAX_TRAVEL_DIST: f32 = 1000.0;
 
-const N_ENEMIES_MAX: usize = 100;
+const N_ENEMIES_MAX: usize = 1024;
 const ENEMY_CIRCLE_RADIUR: f32 = 15.0;
 
-const SPAWN_START_PERIOD: f32 = 2.0;
 const SPAWN_RADIUS: f32 = 400.0;
 const N_SPAWN_POSITIONS: usize = 10;
+
+const LEVEL0_N_ENEMIES_TO_SPAWN: usize = 2;
+const LEVEL0_SPAWN_PER_MINUTE: f32 = 20.0;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
@@ -44,6 +46,7 @@ const FONT_SMALL_SIZE: u32 = 20;
 
 const PAUSE_TEXT: &str = "Pause";
 const CONTINUE_TEXT: &str = "Continue";
+const START_TEXT: &str = "Start";
 const RESTART_TEXT: &str = "Restart";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
@@ -142,6 +145,7 @@ impl Default for Bullet {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum GameState {
+    StartingLevel,
     Playing,
     Pause,
     Loss,
@@ -158,6 +162,7 @@ struct Game {
     state: GameState,
     dt: f32,
     time: f32,
+    curr_state_time: f32,
     prev_ticks: u32,
     timer: sdl2::TimerSubsystem,
     should_quit: bool,
@@ -171,9 +176,10 @@ struct Game {
     submited_text_input: Option<String>,
     words: Vec<&'static str>,
 
-    n_spawned_enemies: usize,
+    level_idx: usize,
+    n_enemies_to_spawn: usize,
+    spawn_per_minute: f32,
     prev_spawn_time: f32,
-    spawn_period: f32,
     last_type_time: f32,
     last_pause_time: f32,
 }
@@ -212,9 +218,10 @@ impl Game {
             glyph_atlas_small,
             glyph_tex_small,
 
-            state: GameState::Playing,
+            state: GameState::StartingLevel,
             dt: 0.0,
             time: 0.0,
+            curr_state_time: 0.0,
             prev_ticks: timer.ticks(),
             timer,
             should_quit: false,
@@ -228,17 +235,20 @@ impl Game {
             submited_text_input: None,
             words: WORDS.lines().collect(),
 
-            n_spawned_enemies: 0,
+            level_idx: 0,
+            n_enemies_to_spawn: LEVEL0_N_ENEMIES_TO_SPAWN,
+            spawn_per_minute: LEVEL0_SPAWN_PER_MINUTE,
             prev_spawn_time: 0.0,
-            spawn_period: SPAWN_START_PERIOD,
             last_type_time: 0.0,
             last_pause_time: 0.0,
         }
     }
 
     pub fn restart(&mut self) {
-        self.state = GameState::Playing;
+        self.state = GameState::StartingLevel;
         self.dt = 0.0;
+        self.time = 0.0;
+        self.curr_state_time = 0.0;
         self.timer = self.sdl2.timer().unwrap();
         self.prev_ticks = self.timer.ticks();
         self.should_quit = false;
@@ -248,7 +258,9 @@ impl Game {
         self.enemies.iter_mut().for_each(|e| e.is_alive = false);
         self.text_input.clear();
         self.submited_text_input = None;
-        self.n_spawned_enemies = 0;
+        self.level_idx = 0;
+        self.n_enemies_to_spawn = LEVEL0_N_ENEMIES_TO_SPAWN;
+        self.spawn_per_minute = LEVEL0_SPAWN_PER_MINUTE;
         self.prev_spawn_time = 0.0;
         self.last_type_time = 0.0;
         self.last_pause_time = 0.0;
@@ -269,6 +281,9 @@ impl Game {
             self.input.update();
             self.update_text_input();
             match self.state {
+                StartingLevel => {
+                    self.update_starting_level_state();
+                }
                 Playing => {
                     self.update_playing_state();
                 }
@@ -287,6 +302,9 @@ impl Game {
         // Update renderer (draw all the stuff)
         self.draw_scene();
         match self.state {
+            StartingLevel => {
+                self.draw_starting_level_state();
+            }
             Playing => {
                 self.draw_playing_state();
             }
@@ -320,14 +338,22 @@ impl Game {
 
             if text_input == PAUSE_TEXT {
                 if self.can_pause() {
-                    self.state = GameState::Pause;
+                    self.change_state(GameState::Pause);
                 }
             } else if text_input == CONTINUE_TEXT {
-                self.state = GameState::Playing;
+                self.change_state(GameState::Playing);
             }
 
             self.submited_text_input = Some(text_input);
             self.text_input.clear();
+        }
+    }
+
+    fn update_starting_level_state(&mut self) {
+        if let Some(text) = self.submited_text_input.as_ref() {
+            if text == START_TEXT {
+                self.change_state(GameState::Playing);
+            }
         }
     }
 
@@ -358,6 +384,7 @@ impl Game {
         let mut free_enemy_idx = -1;
         let mut is_all_dead = true;
         let mut player_shot_target = None;
+        let mut is_loss = false;
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
             // Try receive bullet damage
             if enemy.is_alive {
@@ -397,7 +424,7 @@ impl Game {
             if get_circle_circle_mtv(&enemy.circle, &self.player.circle)
                 .is_some()
             {
-                self.state = GameState::Loss;
+                is_loss = true;
             } else {
                 let dir = (self.player.circle.center
                     - enemy.circle.center)
@@ -405,6 +432,10 @@ impl Game {
                 let step = dir * enemy.speed * self.dt;
                 enemy.circle.center += step;
             }
+        }
+
+        if is_loss {
+            self.change_state(GameState::Loss);
         }
 
         // ---------------------------------------------------------------
@@ -423,12 +454,14 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Spawn new enemy
-        if is_all_dead
-            || (free_enemy_idx != -1
-                && self.time - self.prev_spawn_time >= self.spawn_period)
+        if self.n_enemies_to_spawn > 0
+            && (is_all_dead
+                || (free_enemy_idx != -1
+                    && self.time - self.prev_spawn_time
+                        >= 60.0 / self.spawn_per_minute))
         {
             let name = self.words.choose(&mut rand::thread_rng()).unwrap();
-            let idx = self.n_spawned_enemies % self.spawn_positions.len();
+            let idx = self.n_enemies_to_spawn % self.spawn_positions.len();
             if idx == 0 {
                 self.spawn_positions.shuffle(&mut rand::thread_rng());
             }
@@ -440,7 +473,13 @@ impl Game {
                 speed,
             );
             self.prev_spawn_time = self.time;
-            self.n_spawned_enemies += 1;
+            self.n_enemies_to_spawn -= 1;
+        }
+
+        // ---------------------------------------------------------------
+        // Finish the level
+        if self.n_enemies_to_spawn == 0 && is_all_dead {
+            self.start_new_level();
         }
     }
 
@@ -552,6 +591,30 @@ impl Game {
         }
     }
 
+    fn draw_starting_level_state(&mut self) {
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.draw_screen_dim();
+
+        let atlas = &self.glyph_atlas_small;
+        let top_frame = self.get_top_frame_rect();
+
+        // ---------------------------------------------------------------
+        // Draw Start button
+        let x = top_frame.get_center_x();
+        let y = top_frame.get_min_y();
+
+        draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotCenter(vector![x, y + 8.0]),
+            START_TEXT,
+            &self.text_input,
+            CONSOLE_TEXT_COLOR,
+            MATCHED_TEXT_COLOR,
+        );
+    }
+
     fn draw_playing_state(&mut self) {
         self.renderer
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
@@ -656,6 +719,22 @@ impl Game {
             None,
             Some(DIM_SCREEN_COLOR),
         );
+    }
+
+    fn start_new_level(&mut self) {
+        self.level_idx += 1;
+        self.n_enemies_to_spawn =
+            LEVEL0_N_ENEMIES_TO_SPAWN * (self.level_idx + 1);
+        self.spawn_per_minute =
+            LEVEL0_SPAWN_PER_MINUTE + (3 * (self.level_idx + 1)) as f32;
+        self.change_state(GameState::StartingLevel);
+    }
+
+    fn change_state(&mut self, state: GameState) {
+        if self.state != state {
+            self.state = state;
+            self.curr_state_time = 0.0;
+        }
     }
 
     fn can_pause(&self) -> bool {
