@@ -44,6 +44,7 @@ const FONT_SMALL_SIZE: u32 = 20;
 
 const PAUSE_TEXT: &str = "Pause";
 const CONTINUE_TEXT: &str = "Continue";
+const RESTART_TEXT: &str = "Restart";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
@@ -51,7 +52,7 @@ const CONSOLE_TEXT_COLOR: Color = Color { r: 0.9, g: 0.9, b: 0.9, a: 1.0 };
 const CONSOLE_DIM_TEXT_COLOR: Color =
     Color { r: 0.6, g: 0.6, b: 0.6, a: 1.0 };
 const MATCHED_TEXT_COLOR: Color = Color { r: 0.2, g: 1.0, b: 0.1, a: 1.0 };
-const PAUSE_SCREEN_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.3 };
+const DIM_SCREEN_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.3 };
 
 pub const FONT: &[u8] = include_bytes!(
     "../assets/fonts/share_tech_mono/ShareTechMono-Regular.ttf"
@@ -139,20 +140,14 @@ impl Default for Bullet {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum GameState {
     Playing,
     Pause,
+    Loss,
 }
 
 struct Game {
-    state: GameState,
-    dt: f32,
-    time: f32,
-    prev_ticks: u32,
-    timer: sdl2::TimerSubsystem,
-    should_quit: bool,
-
     sdl2: sdl2::Sdl,
     input: Input,
     renderer: Renderer,
@@ -160,12 +155,20 @@ struct Game {
     glyph_atlas_small: GlyphAtlas,
     glyph_tex_small: Texture,
 
+    state: GameState,
+    dt: f32,
+    time: f32,
+    prev_ticks: u32,
+    timer: sdl2::TimerSubsystem,
+    should_quit: bool,
+
     camera: Camera2D,
     player: Player,
     bullets: [Bullet; N_BULLETS_MAX],
     enemies: [Enemy; N_ENEMIES_MAX],
     spawn_positions: [Vector2<f32>; N_SPAWN_POSITIONS],
     text_input: String,
+    submited_text_input: Option<String>,
     words: Vec<&'static str>,
 
     n_spawned_enemies: usize,
@@ -202,13 +205,6 @@ impl Game {
         }
 
         Self {
-            state: GameState::Playing,
-            dt: 0.0,
-            time: 0.0,
-            prev_ticks: timer.ticks(),
-            timer,
-            should_quit: false,
-
             sdl2,
             input,
             renderer,
@@ -216,12 +212,20 @@ impl Game {
             glyph_atlas_small,
             glyph_tex_small,
 
-            camera: Camera2D::new(Vector2::zeros()),
+            state: GameState::Playing,
+            dt: 0.0,
+            time: 0.0,
+            prev_ticks: timer.ticks(),
+            timer,
+            should_quit: false,
+
+            camera: Camera2D::default(),
             player: Player::new(),
             bullets: [Bullet::default(); N_BULLETS_MAX],
             enemies: [(); N_ENEMIES_MAX].map(|_| Enemy::default()),
             spawn_positions,
             text_input: String::with_capacity(32),
+            submited_text_input: None,
             words: WORDS.lines().collect(),
 
             n_spawned_enemies: 0,
@@ -232,11 +236,29 @@ impl Game {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub fn restart(&mut self) {
+        self.state = GameState::Playing;
+        self.dt = 0.0;
+        self.timer = self.sdl2.timer().unwrap();
+        self.prev_ticks = self.timer.ticks();
         self.should_quit = false;
+        self.camera = Camera2D::default();
+        self.player = Player::new();
+        self.bullets.iter_mut().for_each(|b| b.is_alive = false);
+        self.enemies.iter_mut().for_each(|e| e.is_alive = false);
+        self.text_input.clear();
+        self.submited_text_input = None;
+        self.n_spawned_enemies = 0;
+        self.prev_spawn_time = 0.0;
+        self.last_type_time = 0.0;
+        self.last_pause_time = 0.0;
     }
 
     pub fn update(&mut self) {
+        use GameState::*;
+
+        // ---------------------------------------------------------------
+        // Update game
         let mut dt =
             (self.timer.ticks() - self.prev_ticks) as f32 / 1000.0;
         while dt > 0.0 {
@@ -245,17 +267,44 @@ impl Game {
             dt -= GAME_DT;
 
             self.input.update();
-            self.update_game();
+            self.update_text_input();
+            match self.state {
+                Playing => {
+                    self.update_playing_state();
+                }
+                Pause => {
+                    self.update_pause_state();
+                }
+                Loss => {
+                    self.update_loss_state();
+                }
+            }
         }
         self.prev_ticks = self.timer.ticks();
         self.should_quit |= self.input.should_quit;
 
-        self.update_renderer();
+        // ---------------------------------------------------------------
+        // Update renderer (draw all the stuff)
+        self.draw_scene();
+        match self.state {
+            Playing => {
+                self.draw_playing_state();
+            }
+            Pause => {
+                self.draw_pause_state();
+            }
+            Loss => {
+                self.draw_loss_state();
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Finalize drawing
+        self.renderer.end_drawing(CLEAR_COLOR, None);
+        self.renderer.swap_window();
     }
 
-    fn update_game(&mut self) {
-        // ---------------------------------------------------------------
-        // Update text input
+    fn update_text_input(&mut self) {
         if self.input.text_input.len() > 0 {
             self.text_input.push_str(&self.input.text_input);
             self.last_type_time = self.time;
@@ -265,12 +314,9 @@ impl Game {
             self.last_type_time = self.time;
         }
 
-        let mut is_text_submited = false;
-        let mut text_input = String::new();
+        self.submited_text_input = None;
         if self.input.keycodes.is_just_pressed(Keycode::Return) {
-            is_text_submited = true;
-            text_input.push_str(&self.text_input);
-            self.text_input.clear();
+            let text_input = self.text_input.clone();
 
             if text_input == PAUSE_TEXT {
                 if self.can_pause() {
@@ -279,13 +325,13 @@ impl Game {
             } else if text_input == CONTINUE_TEXT {
                 self.state = GameState::Playing;
             }
-        }
 
-        if self.state == GameState::Pause {
-            self.last_pause_time = self.time;
-            return;
+            self.submited_text_input = Some(text_input);
+            self.text_input.clear();
         }
+    }
 
+    fn update_playing_state(&mut self) {
         // ---------------------------------------------------------------
         // Update bullets
         let mut free_bullet_idx = -1;
@@ -342,14 +388,16 @@ impl Game {
 
             is_all_dead = false;
 
-            if is_text_submited && enemy.name == text_input {
-                player_shot_target = Some(enemy.circle.center);
+            if let Some(text_input) = self.submited_text_input.as_ref() {
+                if enemy.name == text_input.to_owned() {
+                    player_shot_target = Some(enemy.circle.center);
+                }
             }
 
             if get_circle_circle_mtv(&enemy.circle, &self.player.circle)
                 .is_some()
             {
-                // Kill or attack player here
+                self.state = GameState::Loss;
             } else {
                 let dir = (self.player.circle.center
                     - enemy.circle.center)
@@ -371,9 +419,6 @@ impl Game {
                 velocity,
                 damage,
             );
-        } else if is_text_submited && player_shot_target.is_none() {
-            // Player receive damage (text has been submited,
-            // but no enemy matched)
         }
 
         // ---------------------------------------------------------------
@@ -399,7 +444,19 @@ impl Game {
         }
     }
 
-    fn update_renderer(&mut self) {
+    fn update_pause_state(&mut self) {
+        self.last_pause_time = self.time;
+    }
+
+    fn update_loss_state(&mut self) {
+        if let Some(text) = self.submited_text_input.as_ref() {
+            if text == RESTART_TEXT {
+                self.restart();
+            }
+        }
+    }
+
+    fn draw_scene(&mut self) {
         // ---------------------------------------------------------------
         // Draw player, bullets, enemies
         self.renderer.start_new_batch(Proj2D(self.camera), None);
@@ -454,82 +511,18 @@ impl Game {
         }
 
         // ---------------------------------------------------------------
-        // Draw pause dim rect (if paused)
+        // Draw frame
         self.renderer
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
 
-        if self.state == GameState::Pause {
-            self.renderer.draw_rect(
-                Rectangle::from_bot_left(
-                    Vector2::zeros(),
-                    vector![WINDOW_WIDTH, WINDOW_HEIGHT],
-                ),
-                None,
-                Some(PAUSE_SCREEN_COLOR),
-            );
-        }
-
-        // ---------------------------------------------------------------
-        // Draw frame
-        let top_frame = Rectangle::from_top_left(
-            Vector2::new(0.0, WINDOW_HEIGHT),
-            Vector2::new(WINDOW_WIDTH, FRAME_TOP_SIZE),
-        );
-        let bot_frame = Rectangle::from_bot_left(
-            Vector2::zeros(),
-            Vector2::new(WINDOW_WIDTH, FRAME_BOT_SIZE),
-        );
+        let top_frame = self.get_top_frame_rect();
+        let bot_frame = self.get_bot_frame_rect();
         self.renderer.draw_rect(top_frame, None, Some(FRAME_COLOR));
         self.renderer.draw_rect(bot_frame, None, Some(FRAME_COLOR));
 
         // ---------------------------------------------------------------
-        // Draw top bar icons and text
-        let atlas = &self.glyph_atlas_small;
-        let x = top_frame.get_center_x();
-        let y = top_frame.get_min_y();
-
-        let (text, color, matched_color) =
-            if self.state == GameState::Playing {
-                let (color, matched_color) = if self.can_pause() {
-                    (CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
-                } else {
-                    (CONSOLE_DIM_TEXT_COLOR, RED)
-                };
-                (PAUSE_TEXT, color, matched_color)
-            } else {
-                (CONTINUE_TEXT, CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
-            };
-
-        let width = draw_text_with_match(
-            atlas,
-            &mut self.renderer,
-            Pivot::BotCenter(vector![x, y + 8.0]),
-            text,
-            &self.text_input,
-            color,
-            matched_color,
-        );
-
-        if self.state == GameState::Playing {
-            let p = (self.time - self.last_pause_time) / PAUSE_PERIOD;
-            let width = width * p.min(1.0);
-            let color = if p >= 1.0 {
-                GREEN
-            } else {
-                GREEN.with_alpha(0.4)
-            };
-            self.renderer.draw_rect(
-                Rectangle::from_bot_center(
-                    vector![x, y + 3.0],
-                    vector![width, 3.0],
-                ),
-                None,
-                Some(color),
-            );
-        }
-
-        // ---------------------------------------------------------------
         // Draw console text input
+        let atlas = &self.glyph_atlas_small;
         let mut cursor = Vector2::new(20.0, 20.0);
         cursor.x += draw_text(
             atlas,
@@ -557,15 +550,130 @@ impl Game {
                 Some(CONSOLE_TEXT_COLOR),
             );
         }
+    }
+
+    fn draw_playing_state(&mut self) {
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+
+        let atlas = &self.glyph_atlas_small;
+        let top_frame = self.get_top_frame_rect();
 
         // ---------------------------------------------------------------
-        // Finalize drawing
-        self.renderer.end_drawing(CLEAR_COLOR, None);
-        self.renderer.swap_window();
+        // Draw Pause button
+        let x = top_frame.get_center_x();
+        let y = top_frame.get_min_y();
+
+        let (color, matched_color) = if self.can_pause() {
+            (CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+        } else {
+            (CONSOLE_DIM_TEXT_COLOR, RED)
+        };
+
+        let width = draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotCenter(vector![x, y + 8.0]),
+            PAUSE_TEXT,
+            &self.text_input,
+            color,
+            matched_color,
+        );
+
+        // ---------------------------------------------------------------
+        // Draw Pause progress bar
+        let p = (self.time - self.last_pause_time) / PAUSE_PERIOD;
+        let width = width * p.min(1.0);
+        let color = if p >= 1.0 {
+            GREEN
+        } else {
+            GREEN.with_alpha(0.4)
+        };
+        self.renderer.draw_rect(
+            Rectangle::from_bot_center(
+                vector![x, y + 3.0],
+                vector![width, 3.0],
+            ),
+            None,
+            Some(color),
+        );
+    }
+
+    fn draw_pause_state(&mut self) {
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.draw_screen_dim();
+
+        let atlas = &self.glyph_atlas_small;
+        let top_frame = self.get_top_frame_rect();
+
+        // ---------------------------------------------------------------
+        // Draw Continue button
+        let x = top_frame.get_center_x();
+        let y = top_frame.get_min_y();
+
+        draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotCenter(vector![x, y + 8.0]),
+            CONTINUE_TEXT,
+            &self.text_input,
+            CONSOLE_TEXT_COLOR,
+            MATCHED_TEXT_COLOR,
+        );
+    }
+
+    fn draw_loss_state(&mut self) {
+        self.renderer
+            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.draw_screen_dim();
+
+        let atlas = &self.glyph_atlas_small;
+        let top_frame = self.get_top_frame_rect();
+
+        // ---------------------------------------------------------------
+        // Draw Restart button
+        let x = top_frame.get_center_x();
+        let y = top_frame.get_min_y();
+
+        draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotCenter(vector![x, y + 8.0]),
+            RESTART_TEXT,
+            &self.text_input,
+            CONSOLE_TEXT_COLOR,
+            MATCHED_TEXT_COLOR,
+        );
+    }
+
+    fn draw_screen_dim(&mut self) {
+        self.renderer.draw_rect(
+            Rectangle::from_bot_left(
+                Vector2::zeros(),
+                vector![WINDOW_WIDTH, WINDOW_HEIGHT],
+            ),
+            None,
+            Some(DIM_SCREEN_COLOR),
+        );
     }
 
     fn can_pause(&self) -> bool {
         self.time - self.last_pause_time >= PAUSE_PERIOD
+    }
+
+    fn get_top_frame_rect(&self) -> Rectangle {
+        Rectangle::from_top_left(
+            Vector2::new(0.0, WINDOW_HEIGHT),
+            Vector2::new(WINDOW_WIDTH, FRAME_TOP_SIZE),
+        )
+    }
+
+    fn get_bot_frame_rect(&self) -> Rectangle {
+        Rectangle::from_bot_left(
+            Vector2::zeros(),
+            Vector2::new(WINDOW_WIDTH, FRAME_BOT_SIZE),
+        )
     }
 }
 
@@ -631,7 +739,6 @@ fn get_cursor_rect(
 
 pub fn main() {
     let mut game = Game::new();
-    game.reset();
 
     let mut update = move || {
         game.update();
