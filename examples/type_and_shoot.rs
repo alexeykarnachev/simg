@@ -18,8 +18,6 @@ const MSAA: i32 = 16;
 
 const GAME_DT: f32 = 0.005;
 
-const PAUSE_PERIOD: f32 = 5.0;
-
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 
@@ -40,6 +38,11 @@ const N_SPAWN_POSITIONS: usize = 10;
 const LEVEL0_N_ENEMIES_TO_SPAWN: usize = 2;
 const LEVEL0_SPAWN_PER_MINUTE: f32 = 20.0;
 
+const LEVEL0_PAUSE_PERIOD: f32 = 5.0;
+const LEVEL0_KNOCKBACK_PERIOD: f32 = 5.0;
+const LEVEL0_FREEZE_PERIOD: f32 = 5.0;
+const LEVEL0_FREEZE_DURATION: f32 = 3.0;
+
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
 const FONT_SMALL_SIZE: u32 = 20;
@@ -48,6 +51,8 @@ const PAUSE_TEXT: &str = "Pause";
 const CONTINUE_TEXT: &str = "Continue";
 const START_TEXT: &str = "Start";
 const RESTART_TEXT: &str = "Restart";
+const KNOCKBACK_TEXT: &str = "Knockback";
+const FREEZE_TEXT: &str = "Freeze";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
@@ -162,6 +167,7 @@ struct Game {
     state: GameState,
     dt: f32,
     time: f32,
+    playing_time: f32,
     curr_state_time: f32,
     prev_ticks: u32,
     timer: sdl2::TimerSubsystem,
@@ -183,7 +189,16 @@ struct Game {
     n_enemies_killed: usize,
     prev_spawn_time: f32,
     last_type_time: f32,
+
+    pause_period: f32,
     last_pause_time: f32,
+
+    knockback_period: f32,
+    last_knockback_time: f32,
+
+    freeze_period: f32,
+    last_freeze_time: f32,
+    freeze_duration: f32,
 }
 
 impl Game {
@@ -223,6 +238,7 @@ impl Game {
             state: GameState::StartingLevel,
             dt: 0.0,
             time: 0.0,
+            playing_time: 0.0,
             curr_state_time: 0.0,
             prev_ticks: timer.ticks(),
             timer,
@@ -244,7 +260,16 @@ impl Game {
             n_enemies_killed: 0,
             prev_spawn_time: 0.0,
             last_type_time: 0.0,
-            last_pause_time: -PAUSE_PERIOD,
+
+            pause_period: LEVEL0_PAUSE_PERIOD,
+            last_pause_time: 0.0,
+
+            knockback_period: LEVEL0_KNOCKBACK_PERIOD,
+            last_knockback_time: 0.0,
+
+            freeze_period: LEVEL0_FREEZE_PERIOD,
+            last_freeze_time: -LEVEL0_FREEZE_DURATION,
+            freeze_duration: LEVEL0_FREEZE_DURATION,
         }
     }
 
@@ -252,6 +277,7 @@ impl Game {
         self.state = GameState::StartingLevel;
         self.dt = 0.0;
         self.time = 0.0;
+        self.playing_time = 0.0;
         self.curr_state_time = 0.0;
         self.timer = self.sdl2.timer().unwrap();
         self.prev_ticks = self.timer.ticks();
@@ -269,7 +295,13 @@ impl Game {
         self.n_enemies_killed = 0;
         self.prev_spawn_time = 0.0;
         self.last_type_time = 0.0;
-        self.last_pause_time = -PAUSE_PERIOD;
+        self.pause_period = LEVEL0_PAUSE_PERIOD;
+        self.last_pause_time = 0.0;
+        self.knockback_period = LEVEL0_KNOCKBACK_PERIOD;
+        self.last_knockback_time = 0.0;
+        self.freeze_period = LEVEL0_FREEZE_PERIOD;
+        self.last_freeze_time = -LEVEL0_FREEZE_DURATION;
+        self.freeze_duration = LEVEL0_FREEZE_DURATION;
     }
 
     pub fn update(&mut self) {
@@ -340,17 +372,7 @@ impl Game {
 
         self.submited_text_input = None;
         if self.input.keycodes.is_just_pressed(Keycode::Return) {
-            let text_input = self.text_input.clone();
-
-            if text_input == PAUSE_TEXT {
-                if self.can_pause() {
-                    self.change_state(GameState::Pause);
-                }
-            } else if text_input == CONTINUE_TEXT {
-                self.change_state(GameState::Playing);
-            }
-
-            self.submited_text_input = Some(text_input);
+            self.submited_text_input = Some(self.text_input.clone());
             self.text_input.clear();
         }
     }
@@ -364,6 +386,20 @@ impl Game {
     }
 
     fn update_playing_state(&mut self) {
+        self.playing_time += self.dt;
+
+        // ---------------------------------------------------------------
+        // Update skills
+        let mut is_knockback = false;
+        if let Some(text) = self.submited_text_input.as_ref() {
+            if self.can_freeze() && text == FREEZE_TEXT {
+                self.last_freeze_time = self.playing_time;
+            } else if self.can_knockback() && text == KNOCKBACK_TEXT {
+                self.last_knockback_time = self.playing_time;
+                is_knockback = true;
+            }
+        }
+
         // ---------------------------------------------------------------
         // Update bullets
         let mut free_bullet_idx = -1;
@@ -391,6 +427,7 @@ impl Game {
         let mut is_all_dead = true;
         let mut player_shot_target = None;
         let mut is_loss = false;
+        let is_frozen = self.is_frozen();
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
             // Try receive bullet damage
             if enemy.is_alive {
@@ -432,17 +469,13 @@ impl Game {
                 .is_some()
             {
                 is_loss = true;
-            } else {
+            } else if !is_frozen {
                 let dir = (self.player.circle.center
                     - enemy.circle.center)
                     .normalize();
                 let step = dir * enemy.speed * self.dt;
                 enemy.circle.center += step;
             }
-        }
-
-        if is_loss {
-            self.change_state(GameState::Loss);
         }
 
         // ---------------------------------------------------------------
@@ -464,7 +497,7 @@ impl Game {
         if self.n_enemies_to_spawn != self.n_enemies_spawned
             && (is_all_dead
                 || (free_enemy_idx != -1
-                    && self.time - self.prev_spawn_time
+                    && self.playing_time - self.prev_spawn_time
                         >= 60.0 / self.spawn_per_minute))
         {
             let name = self.words.choose(&mut rand::thread_rng()).unwrap();
@@ -479,7 +512,7 @@ impl Game {
                 position,
                 speed,
             );
-            self.prev_spawn_time = self.time;
+            self.prev_spawn_time = self.playing_time;
             self.n_enemies_spawned += 1;
         }
 
@@ -488,10 +521,27 @@ impl Game {
         if self.n_enemies_killed == self.n_enemies_to_spawn {
             self.start_new_level();
         }
+
+        // ---------------------------------------------------------------
+        // Update game state
+        if is_loss {
+            self.change_state(GameState::Loss);
+        } else if let Some(text) = self.submited_text_input.as_ref() {
+            if text == PAUSE_TEXT && self.can_pause() {
+                self.change_state(GameState::Pause);
+            }
+        }
     }
 
     fn update_pause_state(&mut self) {
-        self.last_pause_time = self.time;
+        // ---------------------------------------------------------------
+        // Continue
+        if let Some(text) = self.submited_text_input.as_ref() {
+            if text == CONTINUE_TEXT {
+                self.change_state(GameState::Playing);
+            }
+        }
+        self.last_pause_time = self.playing_time;
     }
 
     fn update_loss_state(&mut self) {
@@ -513,12 +563,13 @@ impl Game {
             Some(Color::new(0.3, 0.5, 0.0, 1.0)),
         );
 
+        let color = if self.is_frozen() {
+            Color::new(0.2, 0.3, 0.6, 1.0)
+        } else {
+            Color::new(0.5, 0.3, 0.0, 1.0)
+        };
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
-            self.renderer.draw_circle(
-                enemy.circle,
-                None,
-                Some(Color::new(0.5, 0.3, 0.0, 1.0)),
-            );
+            self.renderer.draw_circle(enemy.circle, None, Some(color));
         }
 
         for bullet in self.bullets.iter().filter(|b| b.is_alive) {
@@ -570,7 +621,7 @@ impl Game {
         // ---------------------------------------------------------------
         // Draw level progress status (bar and text)
         let bot_left = top_frame.get_bot_left();
-        let width = draw_text(
+        let rect = draw_text(
             atlas,
             &mut self.renderer,
             Pivot::BotLeft(vector![bot_left.x + 8.0, bot_left.y + 8.0]),
@@ -581,10 +632,93 @@ impl Game {
         let p = 1.0
             - (self.n_enemies_killed as f32
                 / self.n_enemies_to_spawn as f32);
-        let size = vector![width * p, 3.0];
+        let size = vector![rect.get_width() * p, 3.0];
         let position = vector![bot_left.x + 8.0, bot_left.y + 3.0];
         let rect = Rectangle::from_left_center(position, size);
         self.renderer.draw_rect(rect, None, Some(RED));
+
+        // ---------------------------------------------------------------
+        // Draw Freeze skill
+        let bot_right = top_frame.get_bot_right();
+        let (p, bar_color, text_color, matched_color) = if self.is_frozen()
+        {
+            let p = 1.0
+                - (self.playing_time - self.last_freeze_time)
+                    / self.freeze_duration;
+            (p, GREEN, CONSOLE_DIM_TEXT_COLOR, RED)
+        } else {
+            let mut p = (self.playing_time
+                - self.last_freeze_time
+                - self.freeze_duration)
+                / self.freeze_period;
+            p = p.min(1.0);
+
+            let (bar_color, text_color, matched_color) = if p >= 1.0 {
+                (GREEN, CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+            } else {
+                (GREEN.with_alpha(0.4), CONSOLE_DIM_TEXT_COLOR, RED)
+            };
+
+            (p, bar_color, text_color, matched_color)
+        };
+
+        let rect = draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotRight(vector![bot_right.x - 8.0, bot_right.y + 8.0]),
+            FREEZE_TEXT,
+            &self.text_input,
+            text_color,
+            matched_color,
+        );
+        let bot_center = rect.get_bot_center();
+
+        self.renderer.draw_rect(
+            Rectangle::from_top_center(
+                vector![bot_center.x, bot_center.y - 3.0],
+                vector![p * rect.get_width(), 3.0],
+            ),
+            None,
+            Some(bar_color),
+        );
+        // ---------------------------------------------------------------
+        // Draw Knockback skill
+        let bot_left = rect.get_bot_left();
+
+        let (color, matched_color) = if self.can_knockback() {
+            (CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+        } else {
+            (CONSOLE_DIM_TEXT_COLOR, RED)
+        };
+
+        let rect = draw_text_with_match(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotRight(vector![bot_left.x - 15.0, bot_left.y]),
+            KNOCKBACK_TEXT,
+            &self.text_input,
+            color,
+            matched_color,
+        );
+
+        let mut p = (self.playing_time - self.last_knockback_time)
+            / self.knockback_period;
+        p = p.min(1.0);
+        let color = if p >= 1.0 {
+            GREEN
+        } else {
+            GREEN.with_alpha(0.4)
+        };
+        let bot_center = rect.get_bot_center();
+
+        self.renderer.draw_rect(
+            Rectangle::from_top_center(
+                vector![bot_center.x, bot_center.y - 3.0],
+                vector![p * rect.get_width(), 3.0],
+            ),
+            None,
+            Some(color),
+        );
 
         // ---------------------------------------------------------------
         // Draw console text input
@@ -595,7 +729,8 @@ impl Game {
             Pivot::BotLeft(cursor),
             "> ",
             CONSOLE_TEXT_COLOR,
-        );
+        )
+        .get_width();
 
         cursor.x += draw_text(
             atlas,
@@ -603,7 +738,8 @@ impl Game {
             Pivot::BotLeft(cursor),
             &self.text_input,
             CONSOLE_TEXT_COLOR,
-        );
+        )
+        .get_width();
 
         // ---------------------------------------------------------------
         // Draw cursor rectangle
@@ -649,7 +785,7 @@ impl Game {
         let top_frame = self.get_top_frame_rect();
 
         // ---------------------------------------------------------------
-        // Draw Pause button
+        // Draw Pause skill
         let x = top_frame.get_center_x();
         let y = top_frame.get_min_y();
 
@@ -667,11 +803,11 @@ impl Game {
             &self.text_input,
             color,
             matched_color,
-        );
+        )
+        .get_width();
 
-        // ---------------------------------------------------------------
-        // Draw Pause progress bar
-        let p = (self.time - self.last_pause_time) / PAUSE_PERIOD;
+        let p =
+            (self.playing_time - self.last_pause_time) / self.pause_period;
         let width = width * p.min(1.0);
         let color = if p >= 1.0 {
             GREEN
@@ -766,8 +902,21 @@ impl Game {
     }
 
     fn can_pause(&self) -> bool {
-        self.state == GameState::Playing
-            && self.time - self.last_pause_time >= PAUSE_PERIOD
+        self.playing_time - self.last_pause_time >= self.pause_period
+    }
+
+    fn can_knockback(&self) -> bool {
+        self.playing_time - self.last_knockback_time
+            >= self.knockback_period
+    }
+
+    fn can_freeze(&self) -> bool {
+        self.playing_time - self.last_freeze_time
+            >= (self.freeze_period + self.freeze_duration)
+    }
+
+    fn is_frozen(&self) -> bool {
+        self.playing_time - self.last_freeze_time <= self.freeze_duration
     }
 
     fn get_top_frame_rect(&self) -> Rectangle {
@@ -791,14 +940,20 @@ fn draw_text(
     pivot: Pivot,
     text: &str,
     text_color: Color,
-) -> f32 {
-    let mut advance = 0.0;
+) -> Rectangle {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
     for glyph in glyph_atlas.iter_text_glyphs(pivot, text) {
-        advance += glyph.advance.x;
+        min_x = min_x.min(glyph.rect.get_min_x());
+        min_y = min_y.min(glyph.rect.get_min_y());
+        max_x = max_x.max(glyph.rect.get_max_x());
+        max_y = max_y.max(glyph.rect.get_max_y());
         renderer.draw_glyph(glyph, Some(text_color));
     }
 
-    advance
+    Rectangle::new(vector![min_x, min_y], vector![max_x, max_y])
 }
 
 fn draw_text_with_match(
@@ -809,13 +964,16 @@ fn draw_text_with_match(
     to_match: &str,
     text_color: Color,
     match_color: Color,
-) -> f32 {
+) -> Rectangle {
     let mut n_matched = 0;
     if to_match.len() > 0 && text.starts_with(to_match) {
         n_matched = to_match.len();
     }
 
-    let mut advance = 0.0;
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
     let mut glyph_idx = 0;
     for glyph in glyph_atlas.iter_text_glyphs(pivot, text) {
         let color = if glyph_idx < n_matched {
@@ -825,11 +983,14 @@ fn draw_text_with_match(
         };
         glyph_idx += 1;
 
-        advance += glyph.advance.x;
+        min_x = min_x.min(glyph.rect.get_min_x());
+        min_y = min_y.min(glyph.rect.get_min_y());
+        max_x = max_x.max(glyph.rect.get_max_x());
+        max_y = max_y.max(glyph.rect.get_max_y());
         renderer.draw_glyph(glyph, Some(color));
     }
 
-    advance
+    Rectangle::new(vector![min_x, min_y], vector![max_x, max_y])
 }
 
 fn get_cursor_rect(

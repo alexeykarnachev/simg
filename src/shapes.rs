@@ -68,6 +68,10 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
+    pub fn new(bot_left: Vector2<f32>, top_right: Vector2<f32>) -> Self {
+        Self { bot_left, top_right }
+    }
+
     pub fn zeros() -> Self {
         Self {
             bot_left: Vector2::zeros(),
@@ -197,6 +201,17 @@ impl Rectangle {
     ) -> Self {
         let mut bot_left = top_left;
         bot_left.y -= size.y;
+
+        Self::from_bot_left(bot_left, size)
+    }
+
+    pub fn from_top_center(
+        top_center: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let mut bot_left = top_center;
+        bot_left.y -= size.y;
+        bot_left.x -= size.x * 0.5;
 
         Self::from_bot_left(bot_left, size)
     }

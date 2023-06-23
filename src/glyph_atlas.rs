@@ -159,6 +159,10 @@ impl GlyphAtlas {
                 pos.x -= size.x * 0.5;
                 pos
             }
+            BotRight(mut pos) => {
+                pos.x -= size.x;
+                pos
+            }
             _ => {
                 todo!()
             }
