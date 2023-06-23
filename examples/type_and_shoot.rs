@@ -37,13 +37,17 @@ const BULLET_MAX_TRAVEL_DIST: f32 = 1000.0;
 const SPAWN_RADIUS: f32 = 400.0;
 const N_SPAWN_POSITIONS: usize = 10;
 
+const FRICTION_K: f32 = 0.95;
+
 const LEVEL0_N_ENEMIES_TO_SPAWN: usize = 2;
 const LEVEL0_SPAWN_PER_MINUTE: f32 = 20.0;
 const LEVEL0_ENEMY_SPEED: f32 = 20.0;
 
 const LEVEL0_PAUSE_PERIOD: f32 = 5.0;
-const LEVEL0_KNOCKBACK_PERIOD: f32 = 5.0;
-const LEVEL0_BLIZZARD_PERIOD: f32 = 5.0;
+const LEVEL0_KNOCKBACK_PERIOD: f32 = 15.0;
+const LEVEL0_KNOCKBACK_SPEED: f32 = 1500.0;
+const LEVEL0_KNOCKBACK_RADIUS: f32 = 200.0;
+const LEVEL0_BLIZZARD_PERIOD: f32 = 10.0;
 const LEVEL0_BLIZZARD_DURATION: f32 = 3.0;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
@@ -88,6 +92,7 @@ struct Enemy {
     name: String,
     circle: Circle,
     speed: f32,
+    velocity: Vector2<f32>,
 }
 
 impl Default for Enemy {
@@ -97,6 +102,7 @@ impl Default for Enemy {
             name: String::new(),
             circle: Circle::zeros(),
             speed: 0.0,
+            velocity: Vector2::zeros(),
         }
     }
 }
@@ -111,6 +117,7 @@ impl Enemy {
         self.is_alive = true;
         self.name = name;
         self.speed = speed;
+        self.velocity = Vector2::zeros();
         self.circle = Circle::new(position, ENEMY_CIRCLE_RADIUR);
     }
 }
@@ -468,16 +475,35 @@ impl Game {
                 }
             }
 
+            let mut kinematic_speed =
+                enemy.velocity.magnitude_squared().sqrt();
+            if kinematic_speed <= 0.1 {
+                enemy.velocity = Vector2::zeros();
+                kinematic_speed = 0.0;
+            }
+
+            let dist_to_player = enemy
+                .circle
+                .center
+                .metric_distance(&self.player.circle.center);
+            let dir_to_player = (self.player.circle.center
+                - enemy.circle.center)
+                .normalize();
             if get_circle_circle_mtv(&enemy.circle, &self.player.circle)
                 .is_some()
             {
                 is_loss = true;
-            } else if !is_blizzard {
-                let dir = (self.player.circle.center
-                    - enemy.circle.center)
-                    .normalize();
-                let step = dir * enemy.speed * self.dt;
+            } else if is_knockback
+                && dist_to_player <= LEVEL0_KNOCKBACK_RADIUS
+            {
+                enemy.velocity = (-dir_to_player) * LEVEL0_KNOCKBACK_SPEED;
+            } else if !is_blizzard && kinematic_speed == 0.0 {
+                let step = dir_to_player * enemy.speed * self.dt;
                 enemy.circle.center += step;
+            } else {
+                let step = enemy.velocity * self.dt;
+                enemy.circle.center += step;
+                enemy.velocity *= FRICTION_K;
             }
         }
 
