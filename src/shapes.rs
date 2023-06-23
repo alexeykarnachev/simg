@@ -167,12 +167,28 @@ impl Rectangle {
         top_left
     }
 
+    pub fn get_left_center(&self) -> Vector2<f32> {
+        let mut left_center = self.bot_left;
+        left_center.y += self.get_height() * 0.5;
+
+        left_center
+    }
+
     pub fn from_center(center: Vector2<f32>, size: Vector2<f32>) -> Self {
         let mut bot_left = center;
         bot_left -= size * 0.5;
-        let top_right = bot_left + size;
 
-        Self { bot_left, top_right }
+        Self::from_bot_left(bot_left, size)
+    }
+
+    pub fn from_left_center(
+        center_left: Vector2<f32>,
+        size: Vector2<f32>,
+    ) -> Self {
+        let mut bot_left = center_left;
+        bot_left.y -= size.y * 0.5;
+
+        Self::from_bot_left(bot_left, size)
     }
 
     pub fn from_top_left(
@@ -181,9 +197,8 @@ impl Rectangle {
     ) -> Self {
         let mut bot_left = top_left;
         bot_left.y -= size.y;
-        let top_right = bot_left + size;
 
-        Self { bot_left, top_right }
+        Self::from_bot_left(bot_left, size)
     }
 
     pub fn from_bot_left(
@@ -201,9 +216,8 @@ impl Rectangle {
     ) -> Self {
         let mut bot_left = bot_center;
         bot_left.x -= 0.5 * size.x;
-        let top_right = bot_left + size;
 
-        Self { bot_left, top_right }
+        Self::from_bot_left(bot_left, size)
     }
 
     pub fn get_triangles(&self) -> [Triangle; 2] {

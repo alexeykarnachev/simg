@@ -177,8 +177,10 @@ struct Game {
     words: Vec<&'static str>,
 
     level_idx: usize,
-    n_enemies_to_spawn: usize,
     spawn_per_minute: f32,
+    n_enemies_to_spawn: usize,
+    n_enemies_spawned: usize,
+    n_enemies_killed: usize,
     prev_spawn_time: f32,
     last_type_time: f32,
     last_pause_time: f32,
@@ -236,11 +238,13 @@ impl Game {
             words: WORDS.lines().collect(),
 
             level_idx: 0,
-            n_enemies_to_spawn: LEVEL0_N_ENEMIES_TO_SPAWN,
             spawn_per_minute: LEVEL0_SPAWN_PER_MINUTE,
+            n_enemies_to_spawn: LEVEL0_N_ENEMIES_TO_SPAWN,
+            n_enemies_spawned: 0,
+            n_enemies_killed: 0,
             prev_spawn_time: 0.0,
             last_type_time: 0.0,
-            last_pause_time: 0.0,
+            last_pause_time: -PAUSE_PERIOD,
         }
     }
 
@@ -259,11 +263,13 @@ impl Game {
         self.text_input.clear();
         self.submited_text_input = None;
         self.level_idx = 0;
-        self.n_enemies_to_spawn = LEVEL0_N_ENEMIES_TO_SPAWN;
         self.spawn_per_minute = LEVEL0_SPAWN_PER_MINUTE;
+        self.n_enemies_to_spawn = LEVEL0_N_ENEMIES_TO_SPAWN;
+        self.n_enemies_spawned = 0;
+        self.n_enemies_killed = 0;
         self.prev_spawn_time = 0.0;
         self.last_type_time = 0.0;
-        self.last_pause_time = 0.0;
+        self.last_pause_time = -PAUSE_PERIOD;
     }
 
     pub fn update(&mut self) {
@@ -400,6 +406,7 @@ impl Game {
                     {
                         bullet.is_alive = false;
                         enemy.is_alive = false;
+                        self.n_enemies_killed += 1;
                         break;
                     }
                 }
@@ -454,14 +461,14 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Spawn new enemy
-        if self.n_enemies_to_spawn > 0
+        if self.n_enemies_to_spawn != self.n_enemies_spawned
             && (is_all_dead
                 || (free_enemy_idx != -1
                     && self.time - self.prev_spawn_time
                         >= 60.0 / self.spawn_per_minute))
         {
             let name = self.words.choose(&mut rand::thread_rng()).unwrap();
-            let idx = self.n_enemies_to_spawn % self.spawn_positions.len();
+            let idx = self.n_enemies_spawned % self.spawn_positions.len();
             if idx == 0 {
                 self.spawn_positions.shuffle(&mut rand::thread_rng());
             }
@@ -473,12 +480,12 @@ impl Game {
                 speed,
             );
             self.prev_spawn_time = self.time;
-            self.n_enemies_to_spawn -= 1;
+            self.n_enemies_spawned += 1;
         }
 
         // ---------------------------------------------------------------
         // Finish the level
-        if self.n_enemies_to_spawn == 0 && is_all_dead {
+        if self.n_enemies_killed == self.n_enemies_to_spawn {
             self.start_new_level();
         }
     }
@@ -554,14 +561,33 @@ impl Game {
         self.renderer
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
 
+        let atlas = &self.glyph_atlas_small;
         let top_frame = self.get_top_frame_rect();
         let bot_frame = self.get_bot_frame_rect();
         self.renderer.draw_rect(top_frame, None, Some(FRAME_COLOR));
         self.renderer.draw_rect(bot_frame, None, Some(FRAME_COLOR));
 
         // ---------------------------------------------------------------
+        // Draw level progress status (bar and text)
+        let bot_left = top_frame.get_bot_left();
+        let width = draw_text(
+            atlas,
+            &mut self.renderer,
+            Pivot::BotLeft(vector![bot_left.x + 8.0, bot_left.y + 8.0]),
+            &format!("Level: {}", self.level_idx),
+            CONSOLE_TEXT_COLOR,
+        );
+
+        let p = 1.0
+            - (self.n_enemies_killed as f32
+                / self.n_enemies_to_spawn as f32);
+        let size = vector![width * p, 3.0];
+        let position = vector![bot_left.x + 8.0, bot_left.y + 3.0];
+        let rect = Rectangle::from_left_center(position, size);
+        self.renderer.draw_rect(rect, None, Some(RED));
+
+        // ---------------------------------------------------------------
         // Draw console text input
-        let atlas = &self.glyph_atlas_small;
         let mut cursor = Vector2::new(20.0, 20.0);
         cursor.x += draw_text(
             atlas,
@@ -727,6 +753,8 @@ impl Game {
             LEVEL0_N_ENEMIES_TO_SPAWN * (self.level_idx + 1);
         self.spawn_per_minute =
             LEVEL0_SPAWN_PER_MINUTE + (3 * (self.level_idx + 1)) as f32;
+        self.n_enemies_spawned = 0;
+        self.n_enemies_killed = 0;
         self.change_state(GameState::StartingLevel);
     }
 
@@ -738,7 +766,8 @@ impl Game {
     }
 
     fn can_pause(&self) -> bool {
-        self.time - self.last_pause_time >= PAUSE_PERIOD
+        self.state == GameState::Playing
+            && self.time - self.last_pause_time >= PAUSE_PERIOD
     }
 
     fn get_top_frame_rect(&self) -> Rectangle {
