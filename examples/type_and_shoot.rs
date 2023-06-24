@@ -42,26 +42,15 @@ const FRICTION_K: f32 = 0.95;
 const LEVEL0_N_ENEMIES_TO_SPAWN: usize = 2;
 const LEVEL0_SPAWN_PER_MINUTE: f32 = 20.0;
 const LEVEL0_ENEMY_SPEED: f32 = 20.0;
-
-const LEVEL0_PAUSE_PERIOD: f32 = 5.0;
-const LEVEL0_KNOCKBACK_PERIOD: f32 = 5.0;
+const LEVEL0_KNOCKBACK_RADIUS: f32 = 300.0;
 const LEVEL0_KNOCKBACK_SPEED: f32 = 1500.0;
-const LEVEL0_KNOCKBACK_RADIUS: f32 = 200.0;
-const LEVEL0_BLIZZARD_PERIOD: f32 = 5.0;
-const LEVEL0_BLIZZARD_DURATION: f32 = 3.0;
-const LEVEL0_ARMAGEDDON_PERIOD: f32 = 5.0;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
 const FONT_SMALL_SIZE: u32 = 20;
 
-const PAUSE_TEXT: &str = "Pause";
-const CONTINUE_TEXT: &str = "Continue";
 const START_TEXT: &str = "Start";
 const RESTART_TEXT: &str = "Restart";
-const KNOCKBACK_TEXT: &str = "Knockback";
-const BLIZZARD_TEXT: &str = "Blizzard";
-const ARMAGEDDON_TEXT: &str = "Armageddon";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
@@ -160,6 +149,58 @@ impl Default for Bullet {
     }
 }
 
+struct Skill {
+    name: String,
+    cooldown: f32,
+    last_use_time: f32,
+    duration: f32,
+}
+
+impl Skill {
+    pub fn new(name: &str, cooldown: f32, duration: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            cooldown,
+            last_use_time: -duration,
+            duration,
+        }
+    }
+
+    pub fn new_pause() -> Self {
+        Self::new("Pause", 5.0, 0.0)
+    }
+
+    pub fn new_continue() -> Self {
+        Self::new("Continue", 0.0, 0.0)
+    }
+
+    pub fn new_knockback() -> Self {
+        Self::new("Knockback", 5.0, 0.0)
+    }
+
+    pub fn new_blizzard() -> Self {
+        Self::new("Blizzard", 5.0, 5.0)
+    }
+
+    pub fn new_armageddon() -> Self {
+        Self::new("Armageddon", 5.0, 0.0)
+    }
+
+    pub fn is_active(&self, time: f32) -> bool {
+        time - self.last_use_time <= self.duration
+    }
+
+    pub fn try_activate(&mut self, time: f32, text: &str) {
+        if self.is_ready(time) && text == self.name {
+            self.last_use_time = time;
+        }
+    }
+
+    fn is_ready(&self, time: f32) -> bool {
+        (time - self.last_use_time) >= (self.cooldown + self.duration)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum GameState {
     StartingLevel,
@@ -202,18 +243,11 @@ struct Game {
     prev_spawn_time: f32,
     last_type_time: f32,
 
-    pause_period: f32,
-    last_pause_time: f32,
-
-    knockback_period: f32,
-    last_knockback_time: f32,
-
-    blizzard_period: f32,
-    last_blizzard_time: f32,
-    blizzard_duration: f32,
-
-    armageddon_period: f32,
-    last_armageddon_time: f32,
+    pause_skill: Skill,
+    continue_skill: Skill,
+    knockback_skill: Skill,
+    blizzard_skill: Skill,
+    armageddon_skill: Skill,
 }
 
 impl Game {
@@ -276,18 +310,11 @@ impl Game {
             prev_spawn_time: 0.0,
             last_type_time: 0.0,
 
-            pause_period: LEVEL0_PAUSE_PERIOD,
-            last_pause_time: 0.0,
-
-            knockback_period: LEVEL0_KNOCKBACK_PERIOD,
-            last_knockback_time: 0.0,
-
-            blizzard_period: LEVEL0_BLIZZARD_PERIOD,
-            last_blizzard_time: -LEVEL0_BLIZZARD_DURATION,
-            blizzard_duration: LEVEL0_BLIZZARD_DURATION,
-
-            armageddon_period: LEVEL0_ARMAGEDDON_PERIOD,
-            last_armageddon_time: 0.0,
+            pause_skill: Skill::new_pause(),
+            continue_skill: Skill::new_continue(),
+            knockback_skill: Skill::new_knockback(),
+            blizzard_skill: Skill::new_blizzard(),
+            armageddon_skill: Skill::new_armageddon(),
         }
     }
 
@@ -313,13 +340,11 @@ impl Game {
         self.n_enemies_killed = 0;
         self.prev_spawn_time = 0.0;
         self.last_type_time = 0.0;
-        self.pause_period = LEVEL0_PAUSE_PERIOD;
-        self.last_pause_time = 0.0;
-        self.knockback_period = LEVEL0_KNOCKBACK_PERIOD;
-        self.last_knockback_time = 0.0;
-        self.blizzard_period = LEVEL0_BLIZZARD_PERIOD;
-        self.last_blizzard_time = -LEVEL0_BLIZZARD_DURATION;
-        self.blizzard_duration = LEVEL0_BLIZZARD_DURATION;
+        self.pause_skill = Skill::new_pause();
+        self.continue_skill = Skill::new_continue();
+        self.knockback_skill = Skill::new_knockback();
+        self.blizzard_skill = Skill::new_blizzard();
+        self.armageddon_skill = Skill::new_armageddon();
     }
 
     pub fn update(&mut self) {
@@ -408,18 +433,11 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Update skills
-        let mut is_knockback = false;
-        let mut is_armageddon = false;
         if let Some(text) = self.submited_text_input.as_ref() {
-            if self.can_blizzard() && text == BLIZZARD_TEXT {
-                self.last_blizzard_time = self.playing_time;
-            } else if self.can_knockback() && text == KNOCKBACK_TEXT {
-                self.last_knockback_time = self.playing_time;
-                is_knockback = true;
-            } else if self.can_armageddon() && text == ARMAGEDDON_TEXT {
-                self.last_armageddon_time = self.playing_time;
-                is_armageddon = true;
-            }
+            self.pause_skill.try_activate(self.playing_time, text);
+            self.knockback_skill.try_activate(self.playing_time, text);
+            self.blizzard_skill.try_activate(self.playing_time, text);
+            self.armageddon_skill.try_activate(self.playing_time, text);
         }
 
         // ---------------------------------------------------------------
@@ -449,7 +467,6 @@ impl Game {
         let mut is_all_dead = true;
         let mut player_shot_target = None;
         let mut is_loss = false;
-        let is_blizzard = self.is_blizzard();
         for (idx, enemy) in self.enemies.iter_mut().enumerate() {
             // Try receive bullet damage
             if enemy.is_alive {
@@ -505,13 +522,15 @@ impl Game {
                 .is_some()
             {
                 is_loss = true;
-            } else if is_knockback
+            } else if self.knockback_skill.is_active(self.playing_time)
                 && dist_to_player <= LEVEL0_KNOCKBACK_RADIUS
             {
                 enemy.velocity = (-dir_to_player) * LEVEL0_KNOCKBACK_SPEED;
-            } else if is_armageddon {
+            } else if self.armageddon_skill.is_active(self.playing_time) {
                 enemy.name = enemy.name[0..1].to_string();
-            } else if !is_blizzard && kinematic_speed == 0.0 {
+            } else if !self.blizzard_skill.is_active(self.playing_time)
+                && kinematic_speed == 0.0
+            {
                 let step = dir_to_player * enemy.speed * self.dt;
                 enemy.circle.center += step;
             } else {
@@ -568,22 +587,19 @@ impl Game {
         // Update game state
         if is_loss {
             self.change_state(GameState::Loss);
-        } else if let Some(text) = self.submited_text_input.as_ref() {
-            if text == PAUSE_TEXT && self.can_pause() {
-                self.change_state(GameState::Pause);
-            }
+        } else if self.pause_skill.is_active(self.playing_time) {
+            self.change_state(GameState::Pause);
         }
     }
 
     fn update_pause_state(&mut self) {
-        // ---------------------------------------------------------------
-        // Continue
         if let Some(text) = self.submited_text_input.as_ref() {
-            if text == CONTINUE_TEXT {
-                self.change_state(GameState::Playing);
-            }
+            self.continue_skill.try_activate(self.playing_time, text)
         }
-        self.last_pause_time = self.playing_time;
+
+        if self.continue_skill.is_active(self.playing_time) {
+            self.change_state(GameState::Playing);
+        }
     }
 
     fn update_loss_state(&mut self) {
@@ -605,7 +621,7 @@ impl Game {
             Some(Color::new(0.3, 0.5, 0.0, 1.0)),
         );
 
-        let color = if self.is_blizzard() {
+        let color = if self.blizzard_skill.is_active(self.playing_time) {
             Color::new(0.2, 0.3, 0.6, 1.0)
         } else {
             Color::new(0.5, 0.3, 0.0, 1.0)
@@ -685,12 +701,9 @@ impl Game {
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(top_frame.get_bot_right()),
-            BLIZZARD_TEXT,
+            &self.blizzard_skill,
             &self.text_input,
             self.playing_time,
-            self.last_blizzard_time,
-            self.blizzard_duration,
-            self.blizzard_period,
         );
 
         // ---------------------------------------------------------------
@@ -699,12 +712,9 @@ impl Game {
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(blizzard_rect.get_bot_left()),
-            KNOCKBACK_TEXT,
+            &self.knockback_skill,
             &self.text_input,
             self.playing_time,
-            self.last_knockback_time,
-            0.0,
-            self.knockback_period,
         );
 
         // ---------------------------------------------------------------
@@ -713,12 +723,9 @@ impl Game {
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(knockback_rect.get_bot_left()),
-            ARMAGEDDON_TEXT,
+            &self.armageddon_skill,
             &self.text_input,
             self.playing_time,
-            self.last_armageddon_time,
-            0.0,
-            self.armageddon_period,
         );
 
         // ---------------------------------------------------------------
@@ -789,12 +796,9 @@ impl Game {
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_center(top_frame.get_bot_center()),
-            PAUSE_TEXT,
+            &self.pause_skill,
             &self.text_input,
             self.playing_time,
-            self.last_pause_time,
-            0.0,
-            self.pause_period,
         );
     }
 
@@ -803,22 +807,16 @@ impl Game {
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
         self.draw_screen_dim();
 
-        let atlas = &self.glyph_atlas_small;
-        let top_frame = self.get_top_frame_rect();
-
         // ---------------------------------------------------------------
-        // Draw Continue button
-        let x = top_frame.get_center_x();
-        let y = top_frame.get_min_y();
-
-        draw_text_with_match(
-            atlas,
+        // Draw Continue skill
+        let top_frame = self.get_top_frame_rect();
+        draw_skill(
+            &self.glyph_atlas_small,
             &mut self.renderer,
-            Pivot::bot_center(vector![x, y + 8.0]),
-            CONTINUE_TEXT,
+            Pivot::bot_center(top_frame.get_bot_center()),
+            &self.continue_skill,
             &self.text_input,
-            CONSOLE_TEXT_COLOR,
-            MATCHED_TEXT_COLOR,
+            self.playing_time,
         );
     }
 
@@ -873,30 +871,6 @@ impl Game {
             self.state = state;
             self.curr_state_time = 0.0;
         }
-    }
-
-    fn can_pause(&self) -> bool {
-        self.playing_time - self.last_pause_time >= self.pause_period
-    }
-
-    fn can_knockback(&self) -> bool {
-        self.playing_time - self.last_knockback_time
-            >= self.knockback_period
-    }
-
-    fn can_blizzard(&self) -> bool {
-        self.playing_time - self.last_blizzard_time
-            >= (self.blizzard_period + self.blizzard_duration)
-    }
-
-    fn can_armageddon(&self) -> bool {
-        self.playing_time - self.last_armageddon_time
-            >= self.armageddon_period
-    }
-
-    fn is_blizzard(&self) -> bool {
-        self.playing_time - self.last_blizzard_time
-            <= self.blizzard_duration
     }
 
     fn get_top_frame_rect(&self) -> Rectangle {
@@ -977,20 +951,21 @@ fn draw_skill(
     glyph_atlas: &GlyphAtlas,
     renderer: &mut Renderer,
     pivot: Pivot,
-    text: &str,
+    skill: &Skill,
     to_match: &str,
     curr_time: f32,
-    last_use_time: f32,
-    duration: f32,
-    period: f32,
 ) -> Rectangle {
+    let last_use_time = skill.last_use_time;
+    let duration = skill.duration;
+    let cooldown = skill.cooldown;
+
     let is_active = curr_time - last_use_time <= duration;
     let (p, bar_color, text_color, matched_color) = if is_active {
         let p = 1.0 - (curr_time - last_use_time) / duration;
 
         (p, GREEN, CONSOLE_DIM_TEXT_COLOR, RED)
     } else {
-        let mut p = (curr_time - last_use_time - duration) / period;
+        let mut p = (curr_time - last_use_time - duration) / cooldown;
         p = p.min(1.0);
 
         let (bar_color, text_color, matched_color) = if p >= 1.0 {
@@ -1020,7 +995,7 @@ fn draw_skill(
         glyph_atlas,
         renderer,
         text_pivot,
-        text,
+        &skill.name,
         to_match,
         text_color,
         matched_color,
