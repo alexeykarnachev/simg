@@ -44,11 +44,12 @@ const LEVEL0_SPAWN_PER_MINUTE: f32 = 20.0;
 const LEVEL0_ENEMY_SPEED: f32 = 20.0;
 
 const LEVEL0_PAUSE_PERIOD: f32 = 5.0;
-const LEVEL0_KNOCKBACK_PERIOD: f32 = 15.0;
+const LEVEL0_KNOCKBACK_PERIOD: f32 = 5.0;
 const LEVEL0_KNOCKBACK_SPEED: f32 = 1500.0;
 const LEVEL0_KNOCKBACK_RADIUS: f32 = 200.0;
-const LEVEL0_BLIZZARD_PERIOD: f32 = 10.0;
+const LEVEL0_BLIZZARD_PERIOD: f32 = 5.0;
 const LEVEL0_BLIZZARD_DURATION: f32 = 3.0;
+const LEVEL0_ARMAGEDDON_PERIOD: f32 = 5.0;
 
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
@@ -60,6 +61,7 @@ const START_TEXT: &str = "Start";
 const RESTART_TEXT: &str = "Restart";
 const KNOCKBACK_TEXT: &str = "Knockback";
 const BLIZZARD_TEXT: &str = "Blizzard";
+const ARMAGEDDON_TEXT: &str = "Armageddon";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
@@ -209,6 +211,9 @@ struct Game {
     blizzard_period: f32,
     last_blizzard_time: f32,
     blizzard_duration: f32,
+
+    armageddon_period: f32,
+    last_armageddon_time: f32,
 }
 
 impl Game {
@@ -280,6 +285,9 @@ impl Game {
             blizzard_period: LEVEL0_BLIZZARD_PERIOD,
             last_blizzard_time: -LEVEL0_BLIZZARD_DURATION,
             blizzard_duration: LEVEL0_BLIZZARD_DURATION,
+
+            armageddon_period: LEVEL0_ARMAGEDDON_PERIOD,
+            last_armageddon_time: 0.0,
         }
     }
 
@@ -401,12 +409,16 @@ impl Game {
         // ---------------------------------------------------------------
         // Update skills
         let mut is_knockback = false;
+        let mut is_armageddon = false;
         if let Some(text) = self.submited_text_input.as_ref() {
             if self.can_blizzard() && text == BLIZZARD_TEXT {
                 self.last_blizzard_time = self.playing_time;
             } else if self.can_knockback() && text == KNOCKBACK_TEXT {
                 self.last_knockback_time = self.playing_time;
                 is_knockback = true;
+            } else if self.can_armageddon() && text == ARMAGEDDON_TEXT {
+                self.last_armageddon_time = self.playing_time;
+                is_armageddon = true;
             }
         }
 
@@ -497,6 +509,8 @@ impl Game {
                 && dist_to_player <= LEVEL0_KNOCKBACK_RADIUS
             {
                 enemy.velocity = (-dir_to_player) * LEVEL0_KNOCKBACK_SPEED;
+            } else if is_armageddon {
+                enemy.name = enemy.name[0..1].to_string();
             } else if !is_blizzard && kinematic_speed == 0.0 {
                 let step = dir_to_player * enemy.speed * self.dt;
                 enemy.circle.center += step;
@@ -681,7 +695,7 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw Knockback skill
-        draw_skill(
+        let knockback_rect = draw_skill(
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(blizzard_rect.get_bot_left()),
@@ -691,6 +705,20 @@ impl Game {
             self.last_knockback_time,
             0.0,
             self.knockback_period,
+        );
+
+        // ---------------------------------------------------------------
+        // Draw Knockback skill
+        draw_skill(
+            &self.glyph_atlas_small,
+            &mut self.renderer,
+            Pivot::bot_right(knockback_rect.get_bot_left()),
+            ARMAGEDDON_TEXT,
+            &self.text_input,
+            self.playing_time,
+            self.last_armageddon_time,
+            0.0,
+            self.armageddon_period,
         );
 
         // ---------------------------------------------------------------
@@ -859,6 +887,11 @@ impl Game {
     fn can_blizzard(&self) -> bool {
         self.playing_time - self.last_blizzard_time
             >= (self.blizzard_period + self.blizzard_duration)
+    }
+
+    fn can_armageddon(&self) -> bool {
+        self.playing_time - self.last_armageddon_time
+            >= self.armageddon_period
     }
 
     fn is_blizzard(&self) -> bool {
