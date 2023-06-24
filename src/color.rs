@@ -1,4 +1,4 @@
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -24,6 +24,10 @@ impl Color {
         color.a = a;
 
         color
+    }
+
+    pub fn add_white(&self, c: f32) -> Self {
+        Self::new(self.r + c, self.g + c, self.b + c, self.a)
     }
 
     pub fn lerp(&self, k: f32, other: Color) -> Self {

@@ -158,7 +158,7 @@ impl Command {
         Self {
             name: name.to_string(),
             cooldown,
-            last_use_time: -duration - f32::EPSILON,
+            last_use_time: -f32::MAX,
             duration,
         }
     }
@@ -188,7 +188,7 @@ impl Command {
     }
 
     pub fn new_armageddon() -> Self {
-        Self::new("Armageddon", 18.0, 0.0)
+        Self::new("Armageddon", f32::MAX, 0.0)
     }
 
     pub fn is_active(&self, time: f32) -> bool {
@@ -199,6 +199,10 @@ impl Command {
         if self.is_ready(time) && text == self.name {
             self.last_use_time = time;
         }
+    }
+
+    pub fn refresh(&mut self) {
+        self.last_use_time = -f32::MAX;
     }
 
     fn is_ready(&self, time: f32) -> bool {
@@ -431,12 +435,16 @@ impl Game {
 
     fn update_starting_level_state(&mut self) {
         if let Some(text) = self.submited_text_input.as_ref() {
-            self.start_command.try_activate(self.playing_time, text)
+            self.start_command.try_activate(self.time, text)
         }
 
-        if self.start_command.is_active(self.playing_time) {
+        if self.start_command.is_active(self.time) {
             self.change_state(GameState::Playing);
         }
+
+        self.knockback_command.refresh();
+        self.blizzard_command.refresh();
+        self.armageddon_command.refresh();
     }
 
     fn update_playing_state(&mut self) {
@@ -607,20 +615,20 @@ impl Game {
 
     fn update_pause_state(&mut self) {
         if let Some(text) = self.submited_text_input.as_ref() {
-            self.continue_command.try_activate(self.playing_time, text)
+            self.continue_command.try_activate(self.time, text)
         }
 
-        if self.continue_command.is_active(self.playing_time) {
+        if self.continue_command.is_active(self.time) {
             self.change_state(GameState::Playing);
         }
     }
 
     fn update_loss_state(&mut self) {
         if let Some(text) = self.submited_text_input.as_ref() {
-            self.restart_command.try_activate(self.playing_time, text);
+            self.restart_command.try_activate(self.time, text);
         }
 
-        if self.restart_command.is_active(self.playing_time) {
+        if self.restart_command.is_active(self.time) {
             self.restart();
         }
     }
@@ -694,7 +702,7 @@ impl Game {
         // ---------------------------------------------------------------
         // Draw level progress status (bar and text)
         let bot_left = top_frame.get_bot_left();
-        let rect = draw_text(
+        let advance = draw_text(
             atlas,
             &mut self.renderer,
             Pivot::bot_left(vector![bot_left.x + 8.0, bot_left.y + 8.0]),
@@ -705,7 +713,7 @@ impl Game {
         let p = 1.0
             - (self.n_enemies_killed as f32
                 / self.n_enemies_to_spawn as f32);
-        let size = vector![rect.get_width() * p, 3.0];
+        let size = vector![advance * p, 3.0];
         let position = vector![bot_left.x + 8.0, bot_left.y + 3.0];
         let rect = Rectangle::from_left_center(position, size);
         self.renderer.draw_rect(rect, None, Some(RED));
@@ -752,8 +760,7 @@ impl Game {
             Pivot::bot_left(cursor),
             "> ",
             CONSOLE_TEXT_COLOR,
-        )
-        .get_width();
+        );
 
         cursor.x += draw_text(
             atlas,
@@ -761,8 +768,7 @@ impl Game {
             Pivot::bot_left(cursor),
             &self.text_input,
             CONSOLE_TEXT_COLOR,
-        )
-        .get_width();
+        );
 
         // ---------------------------------------------------------------
         // Draw cursor rectangle
@@ -790,7 +796,7 @@ impl Game {
             Pivot::bot_center(top_frame.get_bot_center()),
             &self.start_command,
             &self.text_input,
-            self.playing_time,
+            self.time,
         );
     }
 
@@ -825,7 +831,7 @@ impl Game {
             Pivot::bot_center(top_frame.get_bot_center()),
             &self.continue_command,
             &self.text_input,
-            self.playing_time,
+            self.time,
         );
     }
 
@@ -843,7 +849,7 @@ impl Game {
             Pivot::bot_center(top_frame.get_bot_center()),
             &self.restart_command,
             &self.text_input,
-            self.playing_time,
+            self.time,
         );
     }
 
@@ -897,20 +903,14 @@ fn draw_text(
     pivot: Pivot,
     text: &str,
     text_color: Color,
-) -> Rectangle {
-    let mut min_x = f32::MAX;
-    let mut min_y = f32::MAX;
-    let mut max_x = f32::MIN;
-    let mut max_y = f32::MIN;
+) -> f32 {
+    let mut advance = 0.0;
     for glyph in glyph_atlas.iter_text_glyphs(pivot, text) {
-        min_x = min_x.min(glyph.rect.get_min_x());
-        min_y = min_y.min(glyph.rect.get_min_y());
-        max_x = max_x.max(glyph.rect.get_max_x());
-        max_y = max_y.max(glyph.rect.get_max_y());
+        advance += glyph.advance.x;
         renderer.draw_glyph(glyph, Some(text_color));
     }
 
-    Rectangle::new(vector![min_x, min_y], vector![max_x, max_y])
+    advance
 }
 
 fn draw_text_with_match(
@@ -921,16 +921,13 @@ fn draw_text_with_match(
     to_match: &str,
     text_color: Color,
     match_color: Color,
-) -> Rectangle {
+) -> f32 {
     let mut n_matched = 0;
     if to_match.len() > 0 && text.starts_with(to_match) {
         n_matched = to_match.len();
     }
 
-    let mut min_x = f32::MAX;
-    let mut min_y = f32::MAX;
-    let mut max_x = f32::MIN;
-    let mut max_y = f32::MIN;
+    let mut advance = 0.0;
     let mut glyph_idx = 0;
     for glyph in glyph_atlas.iter_text_glyphs(pivot, text) {
         let color = if glyph_idx < n_matched {
@@ -939,15 +936,11 @@ fn draw_text_with_match(
             text_color
         };
         glyph_idx += 1;
-
-        min_x = min_x.min(glyph.rect.get_min_x());
-        min_y = min_y.min(glyph.rect.get_min_y());
-        max_x = max_x.max(glyph.rect.get_max_x());
-        max_y = max_y.max(glyph.rect.get_max_y());
+        advance += glyph.advance.x;
         renderer.draw_glyph(glyph, Some(color));
     }
 
-    Rectangle::new(vector![min_x, min_y], vector![max_x, max_y])
+    advance
 }
 
 fn draw_command(
@@ -962,23 +955,25 @@ fn draw_command(
     let duration = command.duration;
     let cooldown = command.cooldown;
 
-    let is_active = curr_time - last_use_time <= duration;
-    let (p, bar_color, text_color, matched_color) = if is_active {
-        let p = 1.0 - (curr_time - last_use_time) / duration;
+    let (p, bar_color, text_color, matched_color) =
+        if command.is_active(curr_time) {
+            let p = 1.0 - (curr_time - last_use_time) / duration;
 
-        (p, GREEN, CONSOLE_DIM_TEXT_COLOR, RED)
-    } else {
-        let mut p = (curr_time - last_use_time - duration) / cooldown;
-        p = p.min(1.0);
-
-        let (bar_color, text_color, matched_color) = if p >= 1.0 {
-            (GREEN, CONSOLE_TEXT_COLOR, MATCHED_TEXT_COLOR)
+            (p, GREEN, CONSOLE_DIM_TEXT_COLOR, RED)
         } else {
-            (GREEN.with_alpha(0.4), CONSOLE_DIM_TEXT_COLOR, RED)
-        };
+            let mut p = (curr_time - last_use_time - duration) / cooldown;
+            p = p.min(1.0);
 
-        (p, bar_color, text_color, matched_color)
-    };
+            let (bar_color, text_color, matched_color) = if p >= 1.0 {
+                let c = (curr_time * 2.0 * PI).sin() * 0.3;
+                let text_color = CONSOLE_TEXT_COLOR.add_white(c);
+                (GREEN, text_color, MATCHED_TEXT_COLOR)
+            } else {
+                (GREEN.with_alpha(0.4), CONSOLE_DIM_TEXT_COLOR, RED)
+            };
+
+            (p, bar_color, text_color, matched_color)
+        };
 
     let size = vector![COMMAND_RECT_WIDTH, COMMAND_RECT_HEIGHT];
     let rect = Rectangle::from_pivot(pivot, size);
