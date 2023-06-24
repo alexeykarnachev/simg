@@ -24,8 +24,8 @@ const WINDOW_HEIGHT: f32 = 600.0;
 const FRAME_TOP_SIZE: f32 = 50.0;
 const FRAME_BOT_SIZE: f32 = 50.0;
 
-const SKILL_RECT_WIDTH: f32 = 110.0;
-const SKILL_RECT_HEIGHT: f32 = 50.0;
+const COMMAND_RECT_WIDTH: f32 = 110.0;
+const COMMAND_RECT_HEIGHT: f32 = 50.0;
 
 const PLAYER_CIRCLE_RADIUS: f32 = 10.0;
 const ENEMY_CIRCLE_RADIUR: f32 = 10.0;
@@ -48,9 +48,6 @@ const LEVEL0_KNOCKBACK_SPEED: f32 = 1500.0;
 const CURSOR_BLINK_PERIOD: f32 = 0.5;
 
 const FONT_SMALL_SIZE: u32 = 20;
-
-const START_TEXT: &str = "Start";
-const RESTART_TEXT: &str = "Restart";
 
 const CLEAR_COLOR: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
 const FRAME_COLOR: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 0.9 };
@@ -149,21 +146,29 @@ impl Default for Bullet {
     }
 }
 
-struct Skill {
+struct Command {
     name: String,
     cooldown: f32,
     last_use_time: f32,
     duration: f32,
 }
 
-impl Skill {
+impl Command {
     pub fn new(name: &str, cooldown: f32, duration: f32) -> Self {
         Self {
             name: name.to_string(),
             cooldown,
-            last_use_time: -duration,
+            last_use_time: -duration - f32::EPSILON,
             duration,
         }
+    }
+
+    pub fn new_start() -> Self {
+        Self::new("Start", 0.0, 0.0)
+    }
+
+    pub fn new_restart() -> Self {
+        Self::new("Restart", 0.0, 0.0)
     }
 
     pub fn new_pause() -> Self {
@@ -175,15 +180,15 @@ impl Skill {
     }
 
     pub fn new_knockback() -> Self {
-        Self::new("Knockback", 5.0, 0.0)
+        Self::new("Knockback", 12.0, 0.0)
     }
 
     pub fn new_blizzard() -> Self {
-        Self::new("Blizzard", 5.0, 5.0)
+        Self::new("Blizzard", 12.0, 5.0)
     }
 
     pub fn new_armageddon() -> Self {
-        Self::new("Armageddon", 5.0, 0.0)
+        Self::new("Armageddon", 18.0, 0.0)
     }
 
     pub fn is_active(&self, time: f32) -> bool {
@@ -243,11 +248,13 @@ struct Game {
     prev_spawn_time: f32,
     last_type_time: f32,
 
-    pause_skill: Skill,
-    continue_skill: Skill,
-    knockback_skill: Skill,
-    blizzard_skill: Skill,
-    armageddon_skill: Skill,
+    start_command: Command,
+    restart_command: Command,
+    pause_command: Command,
+    continue_command: Command,
+    knockback_command: Command,
+    blizzard_command: Command,
+    armageddon_command: Command,
 }
 
 impl Game {
@@ -310,11 +317,13 @@ impl Game {
             prev_spawn_time: 0.0,
             last_type_time: 0.0,
 
-            pause_skill: Skill::new_pause(),
-            continue_skill: Skill::new_continue(),
-            knockback_skill: Skill::new_knockback(),
-            blizzard_skill: Skill::new_blizzard(),
-            armageddon_skill: Skill::new_armageddon(),
+            start_command: Command::new_start(),
+            restart_command: Command::new_restart(),
+            pause_command: Command::new_pause(),
+            continue_command: Command::new_continue(),
+            knockback_command: Command::new_knockback(),
+            blizzard_command: Command::new_blizzard(),
+            armageddon_command: Command::new_armageddon(),
         }
     }
 
@@ -340,11 +349,11 @@ impl Game {
         self.n_enemies_killed = 0;
         self.prev_spawn_time = 0.0;
         self.last_type_time = 0.0;
-        self.pause_skill = Skill::new_pause();
-        self.continue_skill = Skill::new_continue();
-        self.knockback_skill = Skill::new_knockback();
-        self.blizzard_skill = Skill::new_blizzard();
-        self.armageddon_skill = Skill::new_armageddon();
+        self.pause_command = Command::new_pause();
+        self.continue_command = Command::new_continue();
+        self.knockback_command = Command::new_knockback();
+        self.blizzard_command = Command::new_blizzard();
+        self.armageddon_command = Command::new_armageddon();
     }
 
     pub fn update(&mut self) {
@@ -422,9 +431,11 @@ impl Game {
 
     fn update_starting_level_state(&mut self) {
         if let Some(text) = self.submited_text_input.as_ref() {
-            if text == START_TEXT {
-                self.change_state(GameState::Playing);
-            }
+            self.start_command.try_activate(self.playing_time, text)
+        }
+
+        if self.start_command.is_active(self.playing_time) {
+            self.change_state(GameState::Playing);
         }
     }
 
@@ -432,12 +443,13 @@ impl Game {
         self.playing_time += self.dt;
 
         // ---------------------------------------------------------------
-        // Update skills
+        // Update commands
         if let Some(text) = self.submited_text_input.as_ref() {
-            self.pause_skill.try_activate(self.playing_time, text);
-            self.knockback_skill.try_activate(self.playing_time, text);
-            self.blizzard_skill.try_activate(self.playing_time, text);
-            self.armageddon_skill.try_activate(self.playing_time, text);
+            self.pause_command.try_activate(self.playing_time, text);
+            self.knockback_command.try_activate(self.playing_time, text);
+            self.blizzard_command.try_activate(self.playing_time, text);
+            self.armageddon_command
+                .try_activate(self.playing_time, text);
         }
 
         // ---------------------------------------------------------------
@@ -522,13 +534,14 @@ impl Game {
                 .is_some()
             {
                 is_loss = true;
-            } else if self.knockback_skill.is_active(self.playing_time)
+            } else if self.knockback_command.is_active(self.playing_time)
                 && dist_to_player <= LEVEL0_KNOCKBACK_RADIUS
             {
                 enemy.velocity = (-dir_to_player) * LEVEL0_KNOCKBACK_SPEED;
-            } else if self.armageddon_skill.is_active(self.playing_time) {
+            } else if self.armageddon_command.is_active(self.playing_time)
+            {
                 enemy.name = enemy.name[0..1].to_string();
-            } else if !self.blizzard_skill.is_active(self.playing_time)
+            } else if !self.blizzard_command.is_active(self.playing_time)
                 && kinematic_speed == 0.0
             {
                 let step = dir_to_player * enemy.speed * self.dt;
@@ -587,26 +600,28 @@ impl Game {
         // Update game state
         if is_loss {
             self.change_state(GameState::Loss);
-        } else if self.pause_skill.is_active(self.playing_time) {
+        } else if self.pause_command.is_active(self.playing_time) {
             self.change_state(GameState::Pause);
         }
     }
 
     fn update_pause_state(&mut self) {
         if let Some(text) = self.submited_text_input.as_ref() {
-            self.continue_skill.try_activate(self.playing_time, text)
+            self.continue_command.try_activate(self.playing_time, text)
         }
 
-        if self.continue_skill.is_active(self.playing_time) {
+        if self.continue_command.is_active(self.playing_time) {
             self.change_state(GameState::Playing);
         }
     }
 
     fn update_loss_state(&mut self) {
         if let Some(text) = self.submited_text_input.as_ref() {
-            if text == RESTART_TEXT {
-                self.restart();
-            }
+            self.restart_command.try_activate(self.playing_time, text);
+        }
+
+        if self.restart_command.is_active(self.playing_time) {
+            self.restart();
         }
     }
 
@@ -621,7 +636,7 @@ impl Game {
             Some(Color::new(0.3, 0.5, 0.0, 1.0)),
         );
 
-        let color = if self.blizzard_skill.is_active(self.playing_time) {
+        let color = if self.blizzard_command.is_active(self.playing_time) {
             Color::new(0.2, 0.3, 0.6, 1.0)
         } else {
             Color::new(0.5, 0.3, 0.0, 1.0)
@@ -696,34 +711,34 @@ impl Game {
         self.renderer.draw_rect(rect, None, Some(RED));
 
         // ---------------------------------------------------------------
-        // Draw Blizzard skill
-        let blizzard_rect = draw_skill(
+        // Draw Blizzard command
+        let blizzard_rect = draw_command(
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(top_frame.get_bot_right()),
-            &self.blizzard_skill,
+            &self.blizzard_command,
             &self.text_input,
             self.playing_time,
         );
 
         // ---------------------------------------------------------------
-        // Draw Knockback skill
-        let knockback_rect = draw_skill(
+        // Draw Knockback command
+        let knockback_rect = draw_command(
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(blizzard_rect.get_bot_left()),
-            &self.knockback_skill,
+            &self.knockback_command,
             &self.text_input,
             self.playing_time,
         );
 
         // ---------------------------------------------------------------
-        // Draw Knockback skill
-        draw_skill(
+        // Draw Knockback command
+        draw_command(
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_right(knockback_rect.get_bot_left()),
-            &self.armageddon_skill,
+            &self.armageddon_command,
             &self.text_input,
             self.playing_time,
         );
@@ -766,22 +781,16 @@ impl Game {
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
         self.draw_screen_dim();
 
-        let atlas = &self.glyph_atlas_small;
-        let top_frame = self.get_top_frame_rect();
-
         // ---------------------------------------------------------------
         // Draw Start button
-        let x = top_frame.get_center_x();
-        let y = top_frame.get_min_y();
-
-        draw_text_with_match(
-            atlas,
+        let top_frame = self.get_top_frame_rect();
+        draw_command(
+            &self.glyph_atlas_small,
             &mut self.renderer,
-            Pivot::bot_center(vector![x, y + 8.0]),
-            START_TEXT,
+            Pivot::bot_center(top_frame.get_bot_center()),
+            &self.start_command,
             &self.text_input,
-            CONSOLE_TEXT_COLOR,
-            MATCHED_TEXT_COLOR,
+            self.playing_time,
         );
     }
 
@@ -790,13 +799,13 @@ impl Game {
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
 
         // ---------------------------------------------------------------
-        // Draw Pause skill
+        // Draw Pause command
         let top_frame = self.get_top_frame_rect();
-        draw_skill(
+        draw_command(
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_center(top_frame.get_bot_center()),
-            &self.pause_skill,
+            &self.pause_command,
             &self.text_input,
             self.playing_time,
         );
@@ -808,13 +817,13 @@ impl Game {
         self.draw_screen_dim();
 
         // ---------------------------------------------------------------
-        // Draw Continue skill
+        // Draw Continue command
         let top_frame = self.get_top_frame_rect();
-        draw_skill(
+        draw_command(
             &self.glyph_atlas_small,
             &mut self.renderer,
             Pivot::bot_center(top_frame.get_bot_center()),
-            &self.continue_skill,
+            &self.continue_command,
             &self.text_input,
             self.playing_time,
         );
@@ -825,22 +834,16 @@ impl Game {
             .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
         self.draw_screen_dim();
 
-        let atlas = &self.glyph_atlas_small;
-        let top_frame = self.get_top_frame_rect();
-
         // ---------------------------------------------------------------
         // Draw Restart button
-        let x = top_frame.get_center_x();
-        let y = top_frame.get_min_y();
-
-        draw_text_with_match(
-            atlas,
+        let top_frame = self.get_top_frame_rect();
+        draw_command(
+            &self.glyph_atlas_small,
             &mut self.renderer,
-            Pivot::bot_center(vector![x, y + 8.0]),
-            RESTART_TEXT,
+            Pivot::bot_center(top_frame.get_bot_center()),
+            &self.restart_command,
             &self.text_input,
-            CONSOLE_TEXT_COLOR,
-            MATCHED_TEXT_COLOR,
+            self.playing_time,
         );
     }
 
@@ -860,7 +863,7 @@ impl Game {
         self.n_enemies_to_spawn =
             LEVEL0_N_ENEMIES_TO_SPAWN * (self.level_idx + 1);
         self.spawn_per_minute =
-            LEVEL0_SPAWN_PER_MINUTE + (3 * (self.level_idx + 1)) as f32;
+            LEVEL0_SPAWN_PER_MINUTE + (1.5 * (self.level_idx + 1) as f32);
         self.n_enemies_spawned = 0;
         self.n_enemies_killed = 0;
         self.change_state(GameState::StartingLevel);
@@ -947,17 +950,17 @@ fn draw_text_with_match(
     Rectangle::new(vector![min_x, min_y], vector![max_x, max_y])
 }
 
-fn draw_skill(
+fn draw_command(
     glyph_atlas: &GlyphAtlas,
     renderer: &mut Renderer,
     pivot: Pivot,
-    skill: &Skill,
+    command: &Command,
     to_match: &str,
     curr_time: f32,
 ) -> Rectangle {
-    let last_use_time = skill.last_use_time;
-    let duration = skill.duration;
-    let cooldown = skill.cooldown;
+    let last_use_time = command.last_use_time;
+    let duration = command.duration;
+    let cooldown = command.cooldown;
 
     let is_active = curr_time - last_use_time <= duration;
     let (p, bar_color, text_color, matched_color) = if is_active {
@@ -977,7 +980,7 @@ fn draw_skill(
         (p, bar_color, text_color, matched_color)
     };
 
-    let size = vector![SKILL_RECT_WIDTH, SKILL_RECT_HEIGHT];
+    let size = vector![COMMAND_RECT_WIDTH, COMMAND_RECT_HEIGHT];
     let rect = Rectangle::from_pivot(pivot, size);
     let bot_center = rect.get_bot_center();
 
@@ -995,7 +998,7 @@ fn draw_skill(
         glyph_atlas,
         renderer,
         text_pivot,
-        &skill.name,
+        &command.name,
         to_match,
         text_color,
         matched_color,
