@@ -220,8 +220,14 @@ struct BatchInfo {
 
 pub enum Projection {
     ProjScreen,
-    Proj2D(Camera2D),
-    Proj3D,
+    Proj2D {
+        eye: Point2<f32>,
+        zoom: f32,
+        rotation: f32,
+    },
+    Proj3D {
+        fovy: f32,
+    },
 }
 
 impl BatchInfo {
@@ -665,8 +671,21 @@ impl Renderer {
                 0.0,
                 1.0,
             ),
-            Proj2D(camera) => {
-                let view = camera.get_view();
+            Proj2D { eye, zoom, rotation } => {
+                let mut scale = Matrix4::identity();
+                scale[(0, 0)] = zoom;
+                scale[(1, 1)] = zoom;
+
+                let mut translation = Matrix4::identity();
+                translation[(0, 3)] = -eye.x;
+                translation[(1, 3)] = -eye.y;
+
+                let rotation = Matrix4::new_rotation(Vector3::new(
+                    0.0, 0.0, -rotation,
+                ));
+
+                let view = rotation * scale * translation;
+
                 let projection = Matrix4::new_orthographic(
                     self.window_size.0 as f32 / -2.0,
                     self.window_size.0 as f32 / 2.0,
@@ -678,8 +697,8 @@ impl Renderer {
 
                 projection * view
             }
-            Proj3D => {
-                let fovy = (70.0f32).to_radians();
+            Proj3D { fovy } => {
+                let fovy = fovy.to_radians();
                 let eye = Point3::new(0.0, 0.0, 0.0);
                 let target = Point3::new(0.0, 0.0, -1.0);
                 let up = Vector3::new(0.0, 1.0, 0.0);

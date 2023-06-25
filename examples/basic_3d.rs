@@ -1,4 +1,4 @@
-use nalgebra::Vector2;
+use nalgebra::{point, Vector2};
 use simg::color::*;
 use simg::input::Input;
 use simg::renderer::Projection::*;
@@ -74,9 +74,14 @@ impl Game {
     fn update_game(&mut self) {}
 
     fn update_renderer(&mut self) {
-        self.renderer.start_new_batch(Proj3D, None);
+        self.renderer.start_new_batch(Proj3D { fovy: 60.0 }, None);
 
-        // self.renderer.draw_triangle(triangle, texcoords, color);
+        let triangle = Triangle::new(
+            point![0.0, 0.0, -5.0],
+            point![2.0, 0.0, -5.0],
+            point![0.0, 2.0, -5.0],
+        );
+        self.renderer.draw_triangle(triangle, None, Some(RED));
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();

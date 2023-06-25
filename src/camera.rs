@@ -1,4 +1,4 @@
-use nalgebra::{Matrix4, Point2, Vector3};
+use nalgebra::Point2;
 
 #[derive(Clone, Copy)]
 pub struct Camera2D {
@@ -16,20 +16,5 @@ impl Default for Camera2D {
 impl Camera2D {
     pub fn new(position: Point2<f32>) -> Self {
         Self { position, rotation: 0.0, zoom: 1.0 }
-    }
-
-    pub fn get_view(&self) -> Matrix4<f32> {
-        let mut scale = Matrix4::identity();
-        scale[(0, 0)] = self.zoom;
-        scale[(1, 1)] = self.zoom;
-
-        let mut translation = Matrix4::identity();
-        translation[(0, 3)] = -self.position.x;
-        translation[(1, 3)] = -self.position.y;
-
-        let rotation =
-            Matrix4::new_rotation(Vector3::new(0.0, 0.0, -self.rotation));
-
-        rotation * scale * translation
     }
 }

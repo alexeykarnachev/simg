@@ -636,7 +636,14 @@ impl Game {
     fn draw_scene(&mut self) {
         // ---------------------------------------------------------------
         // Draw player, bullets, enemies
-        self.renderer.start_new_batch(Proj2D(self.camera), None);
+        self.renderer.start_new_batch(
+            Proj2D {
+                eye: self.camera.position,
+                zoom: self.camera.zoom,
+                rotation: self.camera.rotation,
+            },
+            None,
+        );
 
         self.renderer.draw_circle(
             self.player.circle,
@@ -661,7 +668,11 @@ impl Game {
         // ---------------------------------------------------------------
         // Draw enemy names
         self.renderer.start_new_batch(
-            Proj2D(self.camera),
+            Proj2D {
+                eye: self.camera.position,
+                zoom: self.camera.zoom,
+                rotation: self.camera.rotation,
+            },
             Some(self.glyph_tex_small),
         );
 
