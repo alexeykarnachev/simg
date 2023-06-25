@@ -19,6 +19,8 @@ python tools/build.py -e example_name -r
 ```
 
 ### WebAssembly
+Make sure that you have emscripten compiler [installed](https://www.hellorust.com/setup/emscripten/).
+
 To build an example for WebAssembly execute:
 ```bash
 cargo build --release --target wasm32-unknown-emscripten --example breakout
