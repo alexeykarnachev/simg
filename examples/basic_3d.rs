@@ -74,7 +74,10 @@ impl Game {
     fn update_game(&mut self) {}
 
     fn update_renderer(&mut self) {
-        self.renderer.start_new_batch(ProjScreen, None);
+        self.renderer.start_new_batch(Proj3D, None);
+
+        // self.renderer.draw_triangle(triangle, texcoords, color);
+
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();
     }

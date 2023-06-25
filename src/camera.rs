@@ -1,20 +1,20 @@
-use nalgebra::{Matrix4, Vector2, Vector3};
+use nalgebra::{Matrix4, Point2, Vector3};
 
 #[derive(Clone, Copy)]
 pub struct Camera2D {
-    pub position: Vector2<f32>,
+    pub position: Point2<f32>,
     pub rotation: f32,
     pub zoom: f32,
 }
 
 impl Default for Camera2D {
     fn default() -> Self {
-        Self::new(Vector2::zeros())
+        Self::new(Point2::origin())
     }
 }
 
 impl Camera2D {
-    pub fn new(position: Vector2<f32>) -> Self {
+    pub fn new(position: Point2<f32>) -> Self {
         Self { position, rotation: 0.0, zoom: 1.0 }
     }
 

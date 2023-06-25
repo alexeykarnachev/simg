@@ -2,7 +2,7 @@
 #![allow(unused_mut)]
 
 use core::f32::consts::PI;
-use nalgebra::Vector2;
+use nalgebra::{point, Point2, Vector2};
 use rand::Rng;
 use sdl2::keyboard::Keycode;
 use simg::audio_player::AudioPlayer;
@@ -23,8 +23,8 @@ const GAME_DT: f32 = 0.001;
 
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
-const WINDOW_CENTER: Vector2<f32> =
-    Vector2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0);
+const WINDOW_CENTER: Point2<f32> =
+    Point2::new(WINDOW_WIDTH / 2.0, WINDOW_HEIGHT / 2.0);
 
 const FIELD_ASPECT: f32 = 0.75;
 const FIELD_HEIGHT: f32 = 580.0;
@@ -82,7 +82,7 @@ struct Block {
 }
 
 impl Block {
-    pub fn new(pos: Vector2<f32>, level: usize) -> Self {
+    pub fn new(pos: Point2<f32>, level: usize) -> Self {
         let size = Vector2::new(CELL_WIDTH, CELL_HEIGHT);
         let rect = Rectangle::from_bot_center(pos, size);
 
@@ -146,8 +146,7 @@ impl Paddle {
     pub fn new() -> Self {
         let x = WINDOW_CENTER.x;
         let y = FIELD_FRAME_THICKNESS + PADDLE_ELEVATION;
-        let rect =
-            Rectangle::from_bot_center(Vector2::new(x, y), PADDLE_SIZE);
+        let rect = Rectangle::from_bot_center(point![x, y], PADDLE_SIZE);
 
         Self {
             rect,
@@ -271,7 +270,7 @@ impl Game {
             y += i_row as f32 * CELL_HEIGHT;
             x += i_col as f32 * CELL_WIDTH;
 
-            let block = Block::new(Vector2::new(x, y), i_row / 2);
+            let block = Block::new(point![x, y], i_row / 2);
             blocks.push(block);
         }
 

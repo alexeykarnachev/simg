@@ -1,7 +1,7 @@
 use crate::common::*;
 use crate::shapes::Rectangle;
 use fontdue;
-use nalgebra::Vector2;
+use nalgebra::{Point2, Vector2};
 
 #[derive(Copy, Clone)]
 pub struct Glyph {
@@ -77,11 +77,11 @@ impl GlyphAtlas {
             let ic = (i_glyph % n_glyphs_per_row) * max_glyph_width;
             let metric = &metrics[i_glyph];
             let texcoords = Rectangle::from_top_left(
-                Vector2::new(ic as f32, (image_height - ir) as f32),
+                Point2::new(ic as f32, (image_height - ir) as f32),
                 Vector2::new(metric.width as f32, metric.height as f32),
             );
             let offset =
-                Vector2::new(metric.xmin as f32, metric.ymin as f32);
+                Point2::new(metric.xmin as f32, metric.ymin as f32);
             let size =
                 Vector2::new(metric.width as f32, metric.height as f32);
             let advance =
@@ -170,7 +170,7 @@ impl GlyphAtlas {
 
         text.chars().map(move |symbol| {
             let mut glyph = self.get_glyph(symbol);
-            glyph.rect.translate_assign(&cursor);
+            glyph.rect.translate_assign(&cursor.coords);
             cursor += glyph.advance;
 
             glyph

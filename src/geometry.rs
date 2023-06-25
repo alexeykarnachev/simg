@@ -1,6 +1,6 @@
 use crate::shapes::*;
 use core::f32::consts::PI;
-use nalgebra::Vector2;
+use nalgebra::{Point2, Vector2};
 use rand::Rng;
 
 pub const UP: Vector2<f32> = Vector2::new(0.0, 1.0);
@@ -143,10 +143,10 @@ pub fn get_circle_rectangle_mtv(
         let r_tr = rect.get_top_right();
         let r_bl = rect.get_bot_left();
         let r_br = rect.get_bot_right();
-        let tl = c.metric_distance(&r_tl);
-        let tr = c.metric_distance(&r_tr);
-        let bl = c.metric_distance(&r_bl);
-        let br = c.metric_distance(&r_br);
+        let tl = c.coords.metric_distance(&r_tl.coords);
+        let tr = c.coords.metric_distance(&r_tr.coords);
+        let bl = c.coords.metric_distance(&r_bl.coords);
+        let br = c.coords.metric_distance(&r_br.coords);
         let min = *[tl, tr, bl, br]
             .iter()
             .min_by(|&a, &b| {
@@ -174,8 +174,8 @@ pub fn intersect_line_with_circle(
     line: &Line,
     circle: &Circle,
 ) -> [Option<Vector2<f32>>; 2] {
-    let s = line.s;
-    let e = line.e;
+    let s = line.s.coords;
+    let e = line.e.coords;
     let r = circle.radius;
 
     let x1 = s.x;
@@ -233,7 +233,7 @@ pub fn intersect_line_with_circle(
 }
 
 pub fn check_if_point_in_rectangle(
-    point: &Vector2<f32>,
+    point: &Point2<f32>,
     rect: &Rectangle,
 ) -> bool {
     point.x > rect.get_min_x()

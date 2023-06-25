@@ -2,15 +2,16 @@
 #![allow(unused_imports)]
 
 use crate::camera::*;
-use crate::color::Color;
+use crate::color::*;
 use crate::glyph_atlas::*;
 use crate::program::*;
 use crate::shapes::*;
-use image::{load_from_memory_with_format, ImageFormat};
-use image::{DynamicImage, EncodableLayout};
-use nalgebra::{Matrix4, Vector2};
-use std::collections::HashMap;
-use std::{mem::size_of, num::NonZeroU32};
+use image::{
+    load_from_memory_with_format, DynamicImage, EncodableLayout,
+    ImageFormat,
+};
+use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
+use std::{collections::HashMap, mem::size_of, num::NonZeroU32};
 
 use glow::{HasContext, NativeTexture};
 
@@ -220,6 +221,7 @@ struct BatchInfo {
 pub enum Projection {
     ProjScreen,
     Proj2D(Camera2D),
+    Proj3D,
 }
 
 impl BatchInfo {
@@ -550,8 +552,8 @@ impl Renderer {
 
     fn draw_vertex(
         &mut self,
-        position: Vector2<f32>,
-        texcoord: Option<Vector2<f32>>,
+        position: Point3<f32>,
+        texcoord: Option<Point2<f32>>,
         color: Option<Color>,
     ) {
         let batch_info = &mut self
@@ -561,7 +563,7 @@ impl Renderer {
         let idx = batch_info.start + batch_info.count;
         self.positions[idx * 3 + 0] = position.x;
         self.positions[idx * 3 + 1] = position.y;
-        self.positions[idx * 3 + 2] = 0.0;
+        self.positions[idx * 3 + 2] = position.z;
 
         if let Some(color) = color {
             self.colors[idx * 4 + 0] = color.r;
@@ -593,9 +595,9 @@ impl Renderer {
         color: Option<Color>,
     ) {
         if let Some(texcoords) = texcoords {
-            self.draw_vertex(triangle.a, Some(texcoords.a), color);
-            self.draw_vertex(triangle.b, Some(texcoords.b), color);
-            self.draw_vertex(triangle.c, Some(texcoords.c), color);
+            self.draw_vertex(triangle.a, Some(texcoords.a.xy()), color);
+            self.draw_vertex(triangle.b, Some(texcoords.b.xy()), color);
+            self.draw_vertex(triangle.c, Some(texcoords.c.xy()), color);
         } else {
             self.draw_vertex(triangle.a, None, color);
             self.draw_vertex(triangle.b, None, color);
@@ -673,6 +675,20 @@ impl Renderer {
                     0.0,
                     1.0,
                 );
+
+                projection * view
+            }
+            Proj3D => {
+                let fovy = (70.0f32).to_radians();
+                let eye = Point3::new(0.0, 0.0, 0.0);
+                let target = Point3::new(0.0, 0.0, -1.0);
+                let up = Vector3::new(0.0, 1.0, 0.0);
+                let view = Matrix4::look_at_rh(&eye, &target, &up);
+                let aspect =
+                    self.window_size.0 as f32 / self.window_size.1 as f32;
+                let projection =
+                    Matrix4::new_perspective(aspect, fovy, 0.1, 1000.0);
+
                 projection * view
             }
         };

@@ -1,6 +1,5 @@
 use core::f32::consts::PI;
-use nalgebra::vector;
-use nalgebra::Vector2;
+use nalgebra::{point, vector, Point2, Vector2};
 use rand::seq::SliceRandom;
 use sdl2::keyboard::Keycode;
 use simg::camera::Camera2D;
@@ -69,7 +68,7 @@ struct Player {
 impl Player {
     pub fn new() -> Self {
         Self {
-            circle: Circle::new(Vector2::zeros(), PLAYER_CIRCLE_RADIUS),
+            circle: Circle::new(Point2::origin(), PLAYER_CIRCLE_RADIUS),
         }
     }
 }
@@ -99,7 +98,7 @@ impl Enemy {
     pub fn reset(
         &mut self,
         name: String,
-        position: Vector2<f32>,
+        position: Point2<f32>,
         speed: f32,
     ) {
         self.is_alive = true;
@@ -113,8 +112,8 @@ impl Enemy {
 #[derive(Debug, Copy, Clone)]
 struct Bullet {
     is_alive: bool,
-    curr_position: Vector2<f32>,
-    prev_position: Vector2<f32>,
+    curr_position: Point2<f32>,
+    prev_position: Point2<f32>,
     velocity: Vector2<f32>,
     damage: u32,
 }
@@ -122,7 +121,7 @@ struct Bullet {
 impl Bullet {
     pub fn reset(
         &mut self,
-        curr_position: Vector2<f32>,
+        curr_position: Point2<f32>,
         velocity: Vector2<f32>,
         damage: u32,
     ) {
@@ -138,8 +137,8 @@ impl Default for Bullet {
     fn default() -> Self {
         Self {
             is_alive: false,
-            curr_position: Vector2::zeros(),
-            prev_position: Vector2::zeros(),
+            curr_position: Point2::origin(),
+            prev_position: Point2::origin(),
             velocity: Vector2::zeros(),
             damage: 0,
         }
@@ -239,7 +238,7 @@ struct Game {
     player: Player,
     bullets: [Bullet; N_BULLETS_MAX],
     enemies: [Enemy; N_ENEMIES_MAX],
-    spawn_positions: [Vector2<f32>; N_SPAWN_POSITIONS],
+    spawn_positions: [Point2<f32>; N_SPAWN_POSITIONS],
     text_input: String,
     submited_text_input: Option<String>,
     words: Vec<&'static str>,
@@ -280,11 +279,11 @@ impl Game {
 
         // Generate possible spawn positions
         let angle_step = 2.0 * PI / N_SPAWN_POSITIONS as f32;
-        let mut spawn_positions = [Vector2::default(); N_SPAWN_POSITIONS];
+        let mut spawn_positions = [Point2::origin(); N_SPAWN_POSITIONS];
         for i in 0..N_SPAWN_POSITIONS {
             let angle = angle_step * (i as f32 + 0.5);
             let position = get_unit_2d_by_angle(angle) * SPAWN_RADIUS;
-            spawn_positions[i] = position;
+            spawn_positions[i] = Point2::from(position);
         }
 
         Self {
@@ -470,7 +469,7 @@ impl Game {
 
             if bullet.is_alive {
                 let travel_dist =
-                    bullet.curr_position.magnitude_squared().sqrt();
+                    bullet.curr_position.coords.magnitude_squared().sqrt();
                 if travel_dist > BULLET_MAX_TRAVEL_DIST {
                     bullet.is_alive = false;
                 } else {
@@ -534,7 +533,8 @@ impl Game {
             let dist_to_player = enemy
                 .circle
                 .center
-                .metric_distance(&self.player.circle.center);
+                .coords
+                .metric_distance(&self.player.circle.center.coords);
             let dir_to_player = (self.player.circle.center
                 - enemy.circle.center)
                 .normalize();
@@ -566,7 +566,7 @@ impl Game {
         if let (Some(target), true) =
             (player_shot_target, free_bullet_idx != -1)
         {
-            let velocity = target.normalize() * 2000.0;
+            let velocity = target.coords.normalize() * 2000.0;
             let damage = 1;
             self.bullets[free_bullet_idx as usize].reset(
                 self.player.circle.center,
@@ -705,7 +705,7 @@ impl Game {
         let advance = draw_text(
             atlas,
             &mut self.renderer,
-            Pivot::bot_left(vector![bot_left.x + 8.0, bot_left.y + 8.0]),
+            Pivot::bot_left(point![bot_left.x + 8.0, bot_left.y + 8.0]),
             &format!("Level: {}", self.level_idx),
             CONSOLE_TEXT_COLOR,
         );
@@ -714,7 +714,7 @@ impl Game {
             - (self.n_enemies_killed as f32
                 / self.n_enemies_to_spawn as f32);
         let size = vector![advance * p, 3.0];
-        let position = vector![bot_left.x + 8.0, bot_left.y + 3.0];
+        let position = point![bot_left.x + 8.0, bot_left.y + 3.0];
         let rect = Rectangle::from_left_center(position, size);
         self.renderer.draw_rect(rect, None, Some(RED));
 
@@ -753,7 +753,7 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw console text input
-        let mut cursor = Vector2::new(20.0, 20.0);
+        let mut cursor = point![20.0, 20.0];
         cursor.x += draw_text(
             atlas,
             &mut self.renderer,
@@ -856,7 +856,7 @@ impl Game {
     fn draw_screen_dim(&mut self) {
         self.renderer.draw_rect(
             Rectangle::from_bot_left(
-                Vector2::zeros(),
+                Point2::origin(),
                 vector![WINDOW_WIDTH, WINDOW_HEIGHT],
             ),
             None,
@@ -884,15 +884,15 @@ impl Game {
 
     fn get_top_frame_rect(&self) -> Rectangle {
         Rectangle::from_top_left(
-            Vector2::new(0.0, WINDOW_HEIGHT),
-            Vector2::new(WINDOW_WIDTH, FRAME_TOP_SIZE),
+            point![0.0, WINDOW_HEIGHT],
+            vector![WINDOW_WIDTH, FRAME_TOP_SIZE],
         )
     }
 
     fn get_bot_frame_rect(&self) -> Rectangle {
         Rectangle::from_bot_left(
-            Vector2::zeros(),
-            Vector2::new(WINDOW_WIDTH, FRAME_BOT_SIZE),
+            Point2::origin(),
+            vector![WINDOW_WIDTH, FRAME_BOT_SIZE],
         )
     }
 }
@@ -981,10 +981,10 @@ fn draw_command(
 
     let bar_width = p * (rect.get_width() - 10.0);
     let bar_rect = Rectangle::from_bot_center(
-        vector![bot_center.x, bot_center.y + 3.0],
+        point![bot_center.x, bot_center.y + 3.0],
         vector![bar_width, 3.0],
     );
-    let text_pos = vector![bot_center.x, bot_center.y + 9.0];
+    let text_pos = point![bot_center.x, bot_center.y + 9.0];
     let text_pivot = Pivot::bot_center(text_pos);
 
     renderer.draw_rect(bar_rect, None, Some(bar_color));
@@ -1003,11 +1003,11 @@ fn draw_command(
 }
 
 fn get_cursor_rect(
-    cursor: &Vector2<f32>,
+    cursor: &Point2<f32>,
     glyph_atlas: &GlyphAtlas,
 ) -> Rectangle {
     Rectangle::from_bot_left(
-        Vector2::new(cursor.x, cursor.y + glyph_atlas.glyph_descent),
+        point![cursor.x, cursor.y + glyph_atlas.glyph_descent],
         Vector2::new(
             glyph_atlas.font_size as f32 / 2.0,
             glyph_atlas.glyph_ascent - glyph_atlas.glyph_descent,
