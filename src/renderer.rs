@@ -226,6 +226,8 @@ pub enum Projection {
         rotation: f32,
     },
     Proj3D {
+        eye: Point3<f32>,
+        target: Point3<f32>,
         fovy: f32,
     },
 }
@@ -697,10 +699,8 @@ impl Renderer {
 
                 projection * view
             }
-            Proj3D { fovy } => {
+            Proj3D { eye, target, fovy } => {
                 let fovy = fovy.to_radians();
-                let eye = Point3::new(0.0, 0.0, 0.0);
-                let target = Point3::new(0.0, 0.0, -1.0);
                 let up = Vector3::new(0.0, 1.0, 0.0);
                 let view = Matrix4::look_at_rh(&eye, &target, &up);
                 let aspect =

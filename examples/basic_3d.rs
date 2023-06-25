@@ -74,12 +74,31 @@ impl Game {
     fn update_game(&mut self) {}
 
     fn update_renderer(&mut self) {
-        self.renderer.start_new_batch(Proj3D { fovy: 60.0 }, None);
+        let roll: f32 = 0.0;
+        // let pitch: f32 = 0.0;
+        let pitch: f32 = self.time * 25.0;
+        let yaw: f32 = 0.0;
+        // let yaw: f32 = self.time * 25.0;
+        let q = nalgebra::UnitQuaternion::from_euler_angles(
+            pitch.to_radians(),
+            yaw.to_radians(),
+            roll.to_radians(),
+        );
+        println!("{}", q);
+
+        let eye = point![0.0, 0.0, 2.0];
+        let target = point![0.0, 0.0, 0.0];
+        let eye = (q * (eye - target)) + target.coords;
+
+        self.renderer.start_new_batch(
+            Proj3D { eye: eye.into(), target, fovy: 60.0 },
+            None,
+        );
 
         let triangle = Triangle::new(
-            point![0.0, 0.0, -5.0],
-            point![2.0, 0.0, -5.0],
-            point![0.0, 2.0, -5.0],
+            point![0.0, 0.0, 0.0],
+            point![0.5, 0.0, 0.0],
+            point![0.0, 2.0, 0.0],
         );
         self.renderer.draw_triangle(triangle, None, Some(RED));
 

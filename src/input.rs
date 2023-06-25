@@ -77,7 +77,13 @@ pub struct Input {
     pub should_quit: bool,
     pub keycodes: KeyStates<Keycode>,
     pub scancodes: KeyStates<Scancode>,
+
     pub mouse_buttons: KeyStates<MouseButton>,
+    pub mouse_x: i32,
+    pub mouse_y: i32,
+    pub mouse_xrel: i32,
+    pub mouse_yrel: i32,
+
     pub text_input: String,
 }
 
@@ -90,7 +96,13 @@ impl Input {
             should_quit: false,
             keycodes: Default::default(),
             scancodes: Default::default(),
+
             mouse_buttons: Default::default(),
+            mouse_x: 0,
+            mouse_y: 0,
+            mouse_xrel: 0,
+            mouse_yrel: 0,
+
             text_input: String::with_capacity(1024),
         }
     }
@@ -100,6 +112,8 @@ impl Input {
         self.scancodes.clear();
         self.mouse_buttons.clear();
         self.text_input.clear();
+        self.mouse_xrel = 0;
+        self.mouse_yrel = 0;
 
         for event in self.event_pump.poll_iter() {
             match event {
@@ -125,6 +139,12 @@ impl Input {
                 }
                 Event::MouseButtonUp { mouse_btn, .. } => {
                     self.mouse_buttons.release(mouse_btn);
+                }
+                Event::MouseMotion { x, y, xrel, yrel, .. } => {
+                    self.mouse_x = x;
+                    self.mouse_y = y;
+                    self.mouse_xrel = xrel;
+                    self.mouse_yrel = yrel;
                 }
                 Event::TextInput { text, .. } => {
                     self.text_input.clone_from(&text);
