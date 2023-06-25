@@ -11,7 +11,7 @@ A simple graphics library for fast prototyping.
 ### Native
 To build and run an example execute (check possible example names in the `./examples` dir):
 ```bash
-cargo run --release --example breakout
+cargo run --release --example example_name
 ```
 Also, you can use python build script for this:
 ```bash
@@ -23,7 +23,7 @@ Make sure that you have emscripten compiler [installed](https://www.hellorust.co
 
 To build an example for WebAssembly execute:
 ```bash
-cargo build --release --target wasm32-unknown-emscripten --example breakout
+cargo build --release --target wasm32-unknown-emscripten --example example_name
 ```
 Or with python script:
 ```bash
