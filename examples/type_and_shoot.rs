@@ -19,7 +19,7 @@ const MSAA: i32 = 16;
 const GAME_DT: f32 = 0.005;
 
 const WINDOW_WIDTH: f32 = 800.0;
-const WINDOW_HEIGHT: f32 = 600.0;
+const WINDOW_HEIGHT: f32 = 800.0;
 
 const FRAME_TOP_SIZE: f32 = 50.0;
 const FRAME_BOT_SIZE: f32 = 50.0;

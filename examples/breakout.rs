@@ -587,7 +587,7 @@ impl Game {
         let scores = format!("{:03}", self.scores);
         for glyph in self
             .glyph_atlas_large
-            .iter_text_glyphs(Pivot::BotLeft(scores_pos), &scores)
+            .iter_text_glyphs(Pivot::bot_left(scores_pos), &scores)
         {
             self.renderer.draw_glyph(glyph, Some(WHITE.with_alpha(1.0)));
         }
@@ -602,7 +602,7 @@ impl Game {
 
         for glyph in self
             .glyph_atlas_small
-            .iter_text_glyphs(Pivot::Center(pos), &text)
+            .iter_text_glyphs(Pivot::center(pos), &text)
         {
             self.renderer
                 .draw_glyph(glyph, Some(WHITE.with_alpha(alpha)));
@@ -619,7 +619,7 @@ impl Game {
         let pos = WINDOW_CENTER;
         for glyph in self
             .glyph_atlas_large
-            .iter_text_glyphs(Pivot::Center(pos), &text)
+            .iter_text_glyphs(Pivot::center(pos), &text)
         {
             self.renderer
                 .draw_glyph(glyph, Some(WHITE.with_alpha(alpha)));
