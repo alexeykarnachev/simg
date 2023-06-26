@@ -22,6 +22,7 @@ const SCREEN_RECT_VERT_SRC: &str =
 const MAX_N_VERTICES: usize = 1 << 15;
 const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
+const MAX_N_VERTEX_BUFFERS: usize = 128;
 const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -33,6 +34,19 @@ struct VertexBufferGL {
     has_tex_vbo: glow::NativeBuffer,
 
     indices_vbo: Option<glow::NativeBuffer>,
+}
+
+impl Default for VertexBufferGL {
+    fn default() -> Self {
+        Self {
+            vao: glow::NativeVertexArray(NonZeroU32::new(1).unwrap()),
+            positions_vbo: glow::NativeBuffer(NonZeroU32::new(1).unwrap()),
+            colors_vbo: glow::NativeBuffer(NonZeroU32::new(1).unwrap()),
+            texcoords_vbo: glow::NativeBuffer(NonZeroU32::new(1).unwrap()),
+            has_tex_vbo: glow::NativeBuffer(NonZeroU32::new(1).unwrap()),
+            indices_vbo: None,
+        }
+    }
 }
 
 impl VertexBufferGL {
@@ -323,6 +337,7 @@ impl Texture {
 
 #[derive(Clone, Copy)]
 struct BatchInfo {
+    vertex_buffer_idx: usize,
     start: usize,
     count: usize,
     tex: Option<Texture>,
@@ -346,11 +361,18 @@ pub enum Projection {
 
 impl BatchInfo {
     pub fn new(
+        vertex_buffer_idx: usize,
         start: usize,
         tex: Option<Texture>,
         proj: Projection,
     ) -> Self {
-        Self { start, count: 0, tex, proj }
+        Self {
+            vertex_buffer_idx,
+            start,
+            count: 0,
+            tex,
+            proj,
+        }
     }
 
     pub fn get_next(&self) -> Self {
@@ -365,6 +387,7 @@ impl BatchInfo {
 impl Default for BatchInfo {
     fn default() -> Self {
         Self {
+            vertex_buffer_idx: 0,
             start: 0,
             count: 0,
             tex: None,
@@ -379,7 +402,8 @@ pub struct Renderer {
     gl: glow::Context,
     program: Program,
 
-    default_vertex_buffer: VertexBufferGL,
+    n_vertex_buffers: usize,
+    vertex_buffers: [VertexBufferGL; MAX_N_VERTEX_BUFFERS],
 
     ms_fbo: Option<glow::NativeFramebuffer>,
 
@@ -456,7 +480,8 @@ impl Renderer {
         let program =
             Program::new_gl(&gl, PRIMITIVE_VERT_SRC, PRIMITIVE_FRAG_SRC);
 
-        let default_vertex_buffer;
+        let mut vertex_buffers =
+            [VertexBufferGL::default(); MAX_N_VERTEX_BUFFERS];
         let mut ms_fbo = None;
         let postfx_tex;
         let postfx_fbo;
@@ -489,7 +514,7 @@ impl Renderer {
 
             // -----------------------------------------------------------
             // Default vertex buffer (for batch rendering)
-            default_vertex_buffer =
+            vertex_buffers[0] =
                 VertexBufferGL::new(&gl, MAX_N_VERTICES, false);
 
             // -----------------------------------------------------------
@@ -526,7 +551,8 @@ impl Renderer {
             gl,
             program,
 
-            default_vertex_buffer,
+            n_vertex_buffers: 1,
+            vertex_buffers,
 
             ms_fbo,
 
@@ -782,33 +808,16 @@ impl Renderer {
             self.gl
                 .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             self.program.bind(&self.gl);
-            self.default_vertex_buffer.bind(&self.gl);
+
+            let mut curr_vb_idx = None;
+            let mut curr_tex = None;
 
             for i_batch in 0..=self.curr_batch_idx {
                 let batch_info = self.batch_infos[i_batch];
-                let start = batch_info.start;
-                let count = batch_info.count;
+                let vb_idx = batch_info.vertex_buffer_idx;
                 let proj = batch_info.proj;
-                let tex = batch_info.tex;
                 let transform =
                     get_transform_from_proj(proj, self.window_size);
-
-                self.default_vertex_buffer.set_positions(
-                    &self.gl,
-                    &self.positions[start * 3..(start + count) * 3],
-                );
-                self.default_vertex_buffer.set_texcoords(
-                    &self.gl,
-                    &self.texcoords[start * 2..(start + count) * 2],
-                );
-                self.default_vertex_buffer.set_colors(
-                    &self.gl,
-                    &self.colors[start * 4..(start + count) * 4],
-                );
-                self.default_vertex_buffer.set_has_tex(
-                    &self.gl,
-                    &self.has_tex[start * 1..(start + count) * 1],
-                );
 
                 self.program.set_uniform_matrix_4_f32(
                     &self.gl,
@@ -816,11 +825,48 @@ impl Renderer {
                     transform.as_slice(),
                 );
 
-                if let Some(tex) = tex {
-                    tex.bind(&self.gl);
-                    self.program.set_uniform_1_i32(&self.gl, "u_tex", 0);
+                if curr_vb_idx.is_none()
+                    || curr_vb_idx.is_some_and(|idx| idx != vb_idx)
+                {
+                    curr_vb_idx = Some(vb_idx);
+                    self.vertex_buffers[vb_idx].bind(&self.gl);
                 }
 
+                // Update default vertex buffer
+                if vb_idx == 0 {
+                    let vb = &mut self.vertex_buffers[vb_idx];
+                    let start = batch_info.start;
+                    let count = batch_info.count;
+                    vb.set_positions(
+                        &self.gl,
+                        &self.positions[start * 3..(start + count) * 3],
+                    );
+                    vb.set_texcoords(
+                        &self.gl,
+                        &self.texcoords[start * 2..(start + count) * 2],
+                    );
+                    vb.set_colors(
+                        &self.gl,
+                        &self.colors[start * 4..(start + count) * 4],
+                    );
+                    vb.set_has_tex(
+                        &self.gl,
+                        &self.has_tex[start * 1..(start + count) * 1],
+                    );
+                }
+
+                if let Some(tex) = batch_info.tex {
+                    if curr_tex.is_none()
+                        || curr_tex.is_some_and(|t| t != tex)
+                    {
+                        curr_tex = Some(tex);
+                        tex.bind(&self.gl);
+                        self.program
+                            .set_uniform_1_i32(&self.gl, "u_tex", 0);
+                    }
+                }
+
+                let count = batch_info.count;
                 self.gl.draw_arrays(glow::TRIANGLES, 0, count as i32);
             }
 
