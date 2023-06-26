@@ -2,7 +2,7 @@ const uint UTRUE = uint(1);
 
 in vec4 vs_color;
 in vec2 vs_texcoord;
-flat in uint vs_is_use_tex;
+flat in uint vs_has_tex;
 
 out vec4 fs_color;
 
@@ -11,7 +11,7 @@ uniform sampler2D u_tex;
 void main() {
     vec4 color = vs_color;
 
-    if (vs_is_use_tex == UTRUE) {
+    if (vs_has_tex == UTRUE) {
         vec2 tex_size = vec2(textureSize(u_tex, 0));
         vec2 uv = vs_texcoord;
         uv /= tex_size;

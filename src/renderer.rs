@@ -24,6 +24,117 @@ const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
 
+#[derive(Copy, Clone, PartialEq)]
+struct VertexBufferGL {
+    vao: glow::NativeVertexArray,
+    positions_vbo: glow::NativeBuffer,
+    colors_vbo: glow::NativeBuffer,
+    texcoords_vbo: glow::NativeBuffer,
+    has_tex_vbo: glow::NativeBuffer,
+
+    indices_vbo: Option<glow::NativeBuffer>,
+}
+
+impl VertexBufferGL {
+    pub fn new(
+        gl: &glow::Context,
+        n_vertices: usize,
+        has_indices: bool,
+    ) -> Self {
+        let vao;
+        let positions_vbo;
+        let texcoords_vbo;
+        let colors_vbo;
+        let has_tex_vbo;
+        let mut indices_vbo = None;
+        unsafe {
+            vao = gl.create_vertex_array().unwrap();
+            gl.bind_vertex_array(Some(vao));
+
+            positions_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(positions_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<f32>() * 3 * n_vertices) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(0);
+            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
+
+            texcoords_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(texcoords_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<f32>() * 2 * n_vertices) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(1);
+            gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 0, 0);
+
+            colors_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(colors_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<f32>() * 4 * n_vertices) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(2);
+            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
+
+            has_tex_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(has_tex_vbo));
+            gl.buffer_data_size(
+                glow::ARRAY_BUFFER,
+                (size_of::<u8>() * 1 * n_vertices) as i32,
+                glow::DYNAMIC_DRAW,
+            );
+            gl.enable_vertex_attrib_array(3);
+            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_BYTE, 0, 0);
+
+            if has_indices {
+                indices_vbo = Some(gl.create_buffer().unwrap());
+                gl.bind_buffer(glow::ARRAY_BUFFER, indices_vbo);
+                gl.buffer_data_size(
+                    glow::ARRAY_BUFFER,
+                    (size_of::<u32>() * 1 * n_vertices) as i32,
+                    glow::DYNAMIC_DRAW,
+                );
+            }
+        };
+
+        Self {
+            vao,
+            positions_vbo,
+            texcoords_vbo,
+            colors_vbo,
+            has_tex_vbo,
+            indices_vbo,
+        }
+    }
+
+    pub fn bind(&self, gl: &glow::Context) {
+        unsafe {
+            gl.bind_vertex_array(Some(self.vao));
+        }
+    }
+
+    pub fn set_positions(&mut self, gl: &glow::Context, data: &[f32]) {
+        buffer_sub_data(gl, self.positions_vbo, data);
+    }
+
+    pub fn set_texcoords(&mut self, gl: &glow::Context, data: &[f32]) {
+        buffer_sub_data(gl, self.texcoords_vbo, data);
+    }
+
+    pub fn set_colors(&mut self, gl: &glow::Context, data: &[f32]) {
+        buffer_sub_data(gl, self.colors_vbo, data);
+    }
+
+    pub fn set_has_tex(&mut self, gl: &glow::Context, data: &[u8]) {
+        buffer_sub_data(gl, self.has_tex_vbo, data);
+    }
+}
+
 impl Program {
     fn new_gl(gl: &glow::Context, vert_src: &str, frag_src: &str) -> Self {
         let program;
@@ -268,11 +379,7 @@ pub struct Renderer {
     gl: glow::Context,
     program: Program,
 
-    vao: glow::NativeVertexArray,
-    positions_vbo: glow::NativeBuffer,
-    texcoords_vbo: glow::NativeBuffer,
-    colors_vbo: glow::NativeBuffer,
-    is_use_tex_vbo: glow::NativeBuffer,
+    default_vertex_buffer: VertexBufferGL,
 
     ms_fbo: Option<glow::NativeFramebuffer>,
 
@@ -282,7 +389,7 @@ pub struct Renderer {
     positions: [f32; MAX_N_VERTICES * 3],
     texcoords: [f32; MAX_N_VERTICES * 2],
     colors: [f32; MAX_N_VERTICES * 4],
-    is_use_tex: [u8; MAX_N_VERTICES],
+    has_tex: [u8; MAX_N_VERTICES],
 
     curr_batch_idx: usize,
     batch_infos: [BatchInfo; MAX_N_BATCHES],
@@ -349,62 +456,13 @@ impl Renderer {
         let program =
             Program::new_gl(&gl, PRIMITIVE_VERT_SRC, PRIMITIVE_FRAG_SRC);
 
-        let vao;
-        let positions_vbo;
-        let texcoords_vbo;
-        let colors_vbo;
-        let is_use_tex_vbo;
+        let default_vertex_buffer;
         let mut ms_fbo = None;
         let postfx_tex;
         let postfx_fbo;
         unsafe {
             gl.enable(glow::BLEND);
             gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
-
-            // -----------------------------------------------------------
-            // Vertex buffers
-            vao = gl.create_vertex_array().unwrap();
-            gl.bind_vertex_array(Some(vao));
-
-            positions_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(positions_vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (size_of::<f32>() * 3 * MAX_N_VERTICES) as i32,
-                glow::DYNAMIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
-
-            texcoords_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(texcoords_vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (size_of::<f32>() * 2 * MAX_N_VERTICES) as i32,
-                glow::DYNAMIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(1);
-            gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 0, 0);
-
-            colors_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(colors_vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (size_of::<f32>() * 4 * MAX_N_VERTICES) as i32,
-                glow::DYNAMIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(2);
-            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
-
-            is_use_tex_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(is_use_tex_vbo));
-            gl.buffer_data_size(
-                glow::ARRAY_BUFFER,
-                (size_of::<u8>() * 1 * MAX_N_VERTICES) as i32,
-                glow::DYNAMIC_DRAW,
-            );
-            gl.enable_vertex_attrib_array(3);
-            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_BYTE, 0, 0);
 
             // -----------------------------------------------------------
             // Multisample buffer
@@ -428,6 +486,11 @@ impl Renderer {
                     Some(ms_rbo),
                 );
             }
+
+            // -----------------------------------------------------------
+            // Default vertex buffer (for batch rendering)
+            default_vertex_buffer =
+                VertexBufferGL::new(&gl, MAX_N_VERTICES, false);
 
             // -----------------------------------------------------------
             // Postfx buffer
@@ -463,11 +526,7 @@ impl Renderer {
             gl,
             program,
 
-            vao,
-            positions_vbo,
-            texcoords_vbo,
-            colors_vbo,
-            is_use_tex_vbo,
+            default_vertex_buffer,
 
             ms_fbo,
 
@@ -477,7 +536,7 @@ impl Renderer {
             positions: [0.0; MAX_N_VERTICES * 3],
             texcoords: [0.0; MAX_N_VERTICES * 2],
             colors: [0.0; MAX_N_VERTICES * 4],
-            is_use_tex: [0; MAX_N_VERTICES],
+            has_tex: [0; MAX_N_VERTICES],
 
             curr_batch_idx: 0,
             batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
@@ -594,9 +653,9 @@ impl Renderer {
         if let Some(texcoord) = texcoord {
             self.texcoords[idx * 2 + 0] = texcoord.x;
             self.texcoords[idx * 2 + 1] = texcoord.y;
-            self.is_use_tex[idx] = 1;
+            self.has_tex[idx] = 1;
         } else {
-            self.is_use_tex[idx] = 0;
+            self.has_tex[idx] = 0;
         }
 
         batch_info.count += 1;
@@ -723,7 +782,7 @@ impl Renderer {
             self.gl
                 .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             self.program.bind(&self.gl);
-            self.gl.bind_vertex_array(Some(self.vao));
+            self.default_vertex_buffer.bind(&self.gl);
 
             for i_batch in 0..=self.curr_batch_idx {
                 let batch_info = self.batch_infos[i_batch];
@@ -734,25 +793,21 @@ impl Renderer {
                 let transform =
                     get_transform_from_proj(proj, self.window_size);
 
-                buffer_sub_data(
+                self.default_vertex_buffer.set_positions(
                     &self.gl,
-                    self.positions_vbo,
                     &self.positions[start * 3..(start + count) * 3],
                 );
-                buffer_sub_data(
+                self.default_vertex_buffer.set_texcoords(
                     &self.gl,
-                    self.texcoords_vbo,
                     &self.texcoords[start * 2..(start + count) * 2],
                 );
-                buffer_sub_data(
+                self.default_vertex_buffer.set_colors(
                     &self.gl,
-                    self.colors_vbo,
                     &self.colors[start * 4..(start + count) * 4],
                 );
-                buffer_sub_data(
+                self.default_vertex_buffer.set_has_tex(
                     &self.gl,
-                    self.is_use_tex_vbo,
-                    &self.is_use_tex[start * 1..(start + count) * 1],
+                    &self.has_tex[start * 1..(start + count) * 1],
                 );
 
                 self.program.set_uniform_matrix_4_f32(

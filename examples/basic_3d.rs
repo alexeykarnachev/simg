@@ -140,12 +140,12 @@ impl Game {
     fn update_renderer(&mut self) {
         self.renderer.set_proj(self.camera.get_proj());
 
-        let triangle = Triangle::new(
-            point![0.0, 0.0, 0.0],
-            point![0.5, 0.0, 0.0],
-            point![0.0, 2.0, 0.0],
-        );
-        self.renderer.draw_triangle(triangle, None, Some(RED));
+        // let triangle = Triangle::new(
+        //     point![0.0, 0.0, 0.0],
+        //     point![0.5, 0.0, 0.0],
+        //     point![0.0, 2.0, 0.0],
+        // );
+        // self.renderer.draw_triangle(triangle, None, Some(RED));
 
         // for v in self.dog_obj.vertices.iter() {
         //     let position = point![v.position[0], v.position[1], v.position[2]];
