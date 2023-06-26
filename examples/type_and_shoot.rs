@@ -636,14 +636,11 @@ impl Game {
     fn draw_scene(&mut self) {
         // ---------------------------------------------------------------
         // Draw player, bullets, enemies
-        self.renderer.start_new_batch(
-            Proj2D {
-                eye: self.camera.position,
-                zoom: self.camera.zoom,
-                rotation: self.camera.rotation,
-            },
-            None,
-        );
+        self.renderer.set_proj(Proj2D {
+            eye: self.camera.position,
+            zoom: self.camera.zoom,
+            rotation: self.camera.rotation,
+        });
 
         self.renderer.draw_circle(
             self.player.circle,
@@ -667,14 +664,7 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw enemy names
-        self.renderer.start_new_batch(
-            Proj2D {
-                eye: self.camera.position,
-                zoom: self.camera.zoom,
-                rotation: self.camera.rotation,
-            },
-            Some(self.glyph_tex_small),
-        );
+        self.renderer.set_tex(self.glyph_tex_small);
 
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
             let mut position = enemy.circle.get_top();
@@ -701,8 +691,7 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw frame
-        self.renderer
-            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.renderer.set_proj(ProjScreen);
 
         let atlas = &self.glyph_atlas_small;
         let top_frame = self.get_top_frame_rect();
@@ -794,8 +783,8 @@ impl Game {
     }
 
     fn draw_starting_level_state(&mut self) {
-        self.renderer
-            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_tex(self.glyph_tex_small);
         self.draw_screen_dim();
 
         // ---------------------------------------------------------------
@@ -812,8 +801,8 @@ impl Game {
     }
 
     fn draw_playing_state(&mut self) {
-        self.renderer
-            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_tex(self.glyph_tex_small);
 
         // ---------------------------------------------------------------
         // Draw Pause command
@@ -829,8 +818,9 @@ impl Game {
     }
 
     fn draw_pause_state(&mut self) {
-        self.renderer
-            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_tex(self.glyph_tex_small);
+
         self.draw_screen_dim();
 
         // ---------------------------------------------------------------
@@ -847,8 +837,9 @@ impl Game {
     }
 
     fn draw_loss_state(&mut self) {
-        self.renderer
-            .start_new_batch(ProjScreen, Some(self.glyph_tex_small));
+        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_tex(self.glyph_tex_small);
+
         self.draw_screen_dim();
 
         // ---------------------------------------------------------------

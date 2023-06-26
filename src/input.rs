@@ -149,7 +149,7 @@ impl Input {
                     self.mouse_xrel += xrel;
                     self.mouse_yrel += yrel;
                 }
-                Event::MouseWheel { y, ..} => {
+                Event::MouseWheel { y, .. } => {
                     self.mouse_wheel += y;
                 }
                 Event::TextInput { text, .. } => {

@@ -215,9 +215,10 @@ struct BatchInfo {
     start: usize,
     count: usize,
     tex: Option<Texture>,
-    transform: Matrix4<f32>,
+    proj: Projection,
 }
 
+#[derive(Clone, Copy, PartialEq)]
 pub enum Projection {
     ProjScreen,
     Proj2D {
@@ -236,9 +237,17 @@ impl BatchInfo {
     pub fn new(
         start: usize,
         tex: Option<Texture>,
-        transform: Matrix4<f32>,
+        proj: Projection,
     ) -> Self {
-        Self { start, count: 0, tex, transform }
+        Self { start, count: 0, tex, proj }
+    }
+
+    pub fn get_next(&self) -> Self {
+        let mut batch = *self;
+        batch.count = 0;
+        batch.start = self.start + self.count;
+
+        batch
     }
 }
 
@@ -248,7 +257,7 @@ impl Default for BatchInfo {
             start: 0,
             count: 0,
             tex: None,
-            transform: Matrix4::identity(),
+            proj: Projection::ProjScreen,
         }
     }
 }
@@ -275,7 +284,7 @@ pub struct Renderer {
     colors: [f32; MAX_N_VERTICES * 4],
     is_use_tex: [u8; MAX_N_VERTICES],
 
-    n_batches: usize,
+    curr_batch_idx: usize,
     batch_infos: [BatchInfo; MAX_N_BATCHES],
 }
 
@@ -470,7 +479,7 @@ impl Renderer {
             colors: [0.0; MAX_N_VERTICES * 4],
             is_use_tex: [0; MAX_N_VERTICES],
 
-            n_batches: 0,
+            curr_batch_idx: 0,
             batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
         }
     }
@@ -564,10 +573,7 @@ impl Renderer {
         texcoord: Option<Point2<f32>>,
         color: Option<Color>,
     ) {
-        let batch_info = &mut self
-            .batch_infos
-            .get_mut(self.n_batches - 1)
-            .expect("You should start a new batch before drawing");
+        let batch_info = &mut self.batch_infos[self.curr_batch_idx];
         let idx = batch_info.start + batch_info.count;
         self.positions[idx * 3 + 0] = position.x;
         self.positions[idx * 3 + 1] = position.y;
@@ -652,77 +658,36 @@ impl Renderer {
         self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
 
-    pub fn start_new_batch(
-        &mut self,
-        proj: Projection,
-        tex: Option<Texture>,
-    ) {
-        use Projection::*;
-
-        if self.n_batches == MAX_N_BATCHES {
-            panic!("Maximum number of batches ({}) has been reached, can't start the new one. Call `end_drawing` to render all batches before starting the new one", self.n_batches);
+    pub fn set_proj(&mut self, proj: Projection) {
+        if self.batch_infos[self.curr_batch_idx].proj != proj {
+            self.batch_infos[self.get_new_batch_idx()].proj = proj;
         }
+    }
 
-        self.window_size = self.window.size();
-        let transform = match proj {
-            ProjScreen => Matrix4::new_orthographic(
-                0.0,
-                self.window_size.0 as f32,
-                0.0,
-                self.window_size.1 as f32,
-                0.0,
-                1.0,
-            ),
-            Proj2D { eye, zoom, rotation } => {
-                let mut scale = Matrix4::identity();
-                scale[(0, 0)] = zoom;
-                scale[(1, 1)] = zoom;
+    pub fn set_tex(&mut self, tex: Texture) {
+        let curr_tex = self.batch_infos[self.curr_batch_idx].tex;
+        if curr_tex.is_none() || curr_tex.is_some_and(|t| t != tex) {
+            self.batch_infos[self.get_new_batch_idx()].tex = Some(tex);
+        }
+    }
 
-                let mut translation = Matrix4::identity();
-                translation[(0, 3)] = -eye.x;
-                translation[(1, 3)] = -eye.y;
-
-                let rotation = Matrix4::new_rotation(Vector3::new(
-                    0.0, 0.0, -rotation,
-                ));
-
-                let view = rotation * scale * translation;
-
-                let projection = Matrix4::new_orthographic(
-                    self.window_size.0 as f32 / -2.0,
-                    self.window_size.0 as f32 / 2.0,
-                    self.window_size.1 as f32 / -2.0,
-                    self.window_size.1 as f32 / 2.0,
-                    0.0,
-                    1.0,
-                );
-
-                projection * view
-            }
-            Proj3D { eye, target, fovy } => {
-                let fovy = fovy.to_radians();
-                let up = Vector3::new(0.0, 1.0, 0.0);
-                let view = Matrix4::look_at_rh(&eye, &target, &up);
-                let aspect =
-                    self.window_size.0 as f32 / self.window_size.1 as f32;
-                let projection =
-                    Matrix4::new_perspective(aspect, fovy, 0.1, 1000.0);
-
-                projection * view
-            }
-        };
-
-        let start = if self.n_batches == 0 {
-            0
+    fn get_new_batch_idx(&mut self) -> usize {
+        if self.batch_infos[self.curr_batch_idx].count == 0 {
+            self.curr_batch_idx
+        } else if self.curr_batch_idx + 1 < MAX_N_BATCHES {
+            let curr_batch = self.batch_infos[self.curr_batch_idx];
+            self.batch_infos[self.curr_batch_idx + 1] =
+                curr_batch.get_next();
+            self.curr_batch_idx += 1;
+            self.curr_batch_idx
         } else {
-            let prev_batch_info = self.batch_infos[self.n_batches - 1];
+            panic!("Maximum number of batches ({}) has been reached, can't start the new one. Call `end_drawing` to render all batches before starting the new one", self.curr_batch_idx + 1);
+        }
+    }
 
-            prev_batch_info.start + prev_batch_info.count
-        };
-
-        let batch_info = BatchInfo::new(start, tex, transform);
-        self.batch_infos[self.n_batches] = batch_info;
-        self.n_batches += 1;
+    pub fn reset_batches(&mut self) {
+        self.curr_batch_idx = 0;
+        self.batch_infos[0] = BatchInfo::default();
     }
 
     pub fn end_drawing(
@@ -760,12 +725,14 @@ impl Renderer {
             self.program.bind(&self.gl);
             self.gl.bind_vertex_array(Some(self.vao));
 
-            for i_batch in 0..self.n_batches {
+            for i_batch in 0..=self.curr_batch_idx {
                 let batch_info = self.batch_infos[i_batch];
                 let start = batch_info.start;
                 let count = batch_info.count;
-                let transform = batch_info.transform;
+                let proj = batch_info.proj;
                 let tex = batch_info.tex;
+                let transform =
+                    get_transform_from_proj(proj, self.window_size);
 
                 buffer_sub_data(
                     &self.gl,
@@ -867,7 +834,7 @@ impl Renderer {
             }
         }
 
-        self.n_batches = 0;
+        self.reset_batches();
     }
 
     pub fn swap_window(&self) {
@@ -914,4 +881,59 @@ fn get_msaa_max_n_samples(
     };
 
     n_samples
+}
+
+fn get_transform_from_proj(
+    proj: Projection,
+    window_size: (u32, u32),
+) -> Matrix4<f32> {
+    use Projection::*;
+
+    let transform = match proj {
+        ProjScreen => Matrix4::new_orthographic(
+            0.0,
+            window_size.0 as f32,
+            0.0,
+            window_size.1 as f32,
+            0.0,
+            1.0,
+        ),
+        Proj2D { eye, zoom, rotation } => {
+            let mut scale = Matrix4::identity();
+            scale[(0, 0)] = zoom;
+            scale[(1, 1)] = zoom;
+
+            let mut translation = Matrix4::identity();
+            translation[(0, 3)] = -eye.x;
+            translation[(1, 3)] = -eye.y;
+
+            let rotation =
+                Matrix4::new_rotation(Vector3::new(0.0, 0.0, -rotation));
+
+            let view = rotation * scale * translation;
+
+            let projection = Matrix4::new_orthographic(
+                window_size.0 as f32 / -2.0,
+                window_size.0 as f32 / 2.0,
+                window_size.1 as f32 / -2.0,
+                window_size.1 as f32 / 2.0,
+                0.0,
+                1.0,
+            );
+
+            projection * view
+        }
+        Proj3D { eye, target, fovy } => {
+            let fovy = fovy.to_radians();
+            let up = Vector3::new(0.0, 1.0, 0.0);
+            let view = Matrix4::look_at_rh(&eye, &target, &up);
+            let aspect = window_size.0 as f32 / window_size.1 as f32;
+            let projection =
+                Matrix4::new_perspective(aspect, fovy, 0.1, 1000.0);
+
+            projection * view
+        }
+    };
+
+    transform
 }

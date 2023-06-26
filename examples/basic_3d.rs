@@ -138,7 +138,7 @@ impl Game {
     }
 
     fn update_renderer(&mut self) {
-        self.renderer.start_new_batch(self.camera.get_proj(), None);
+        self.renderer.set_proj(self.camera.get_proj());
 
         let triangle = Triangle::new(
             point![0.0, 0.0, 0.0],
