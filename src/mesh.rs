@@ -1,9 +1,10 @@
 use obj::{load_obj, raw::parse_obj, Obj, Vertex};
 
 pub struct Mesh {
-    pub n_vertices: usize,
     pub positions: Vec<f32>,
-    pub texcoords: Option<Vec<f32>>,
+    pub colors: Vec<f32>,
+    pub texcoords: Vec<f32>,
+    pub has_tex: Vec<u8>,
     pub indices: Vec<u16>,
 }
 
@@ -12,14 +13,18 @@ impl Mesh {
         let obj: Obj = load_obj(bytes).unwrap();
         let positions: Vec<f32> =
             obj.vertices.iter().flat_map(|v| v.position).collect();
-        let n_vertices = positions.len() / 3;
-        let texcoords = None;
         let indices = obj.indices;
 
+        let n_vertices = positions.len() / 3;
+        let colors = vec![1.0; n_vertices * 4];
+        let texcoords = vec![0.0; n_vertices * 2];
+        let has_tex = vec![0; n_vertices];
+
         Self {
-            n_vertices,
             positions,
+            colors,
             texcoords,
+            has_tex,
             indices,
         }
         // let obj = parse_obj(bytes).unwrap();
@@ -37,5 +42,13 @@ impl Mesh {
         // println!("{:?}", obj.polygons);
 
         // Self { n_vertices, positions, texcoords, indices }
+    }
+
+    pub fn get_n_vertcies(&self) -> usize {
+        self.positions.len() / 3
+    }
+
+    pub fn get_n_indices(&self) -> usize {
+        self.indices.len()
     }
 }

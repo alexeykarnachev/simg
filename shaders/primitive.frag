@@ -7,6 +7,7 @@ flat in uint vs_has_tex;
 out vec4 fs_color;
 
 uniform sampler2D u_tex;
+uniform uint u_is_font;
 
 void main() {
     vec4 color = vs_color;
@@ -17,13 +18,13 @@ void main() {
         uv /= tex_size;
 
         vec4 tex_color = texture(u_tex, uv); 
-        color.r += tex_color.r;
-        color.g += tex_color.g;
-        color.b += tex_color.b;
-        color.a *= tex_color.a;
-    }
 
-    color.a = 1.0;
+        if (u_is_font == UTRUE) {
+            color.a *= tex_color.a;
+        } else {
+            color *= tex_color;
+        }
+    }
 
     fs_color = color;
 }
