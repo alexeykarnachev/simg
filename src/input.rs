@@ -83,6 +83,7 @@ pub struct Input {
     pub mouse_y: i32,
     pub mouse_xrel: i32,
     pub mouse_yrel: i32,
+    pub mouse_wheel: i32,
 
     pub text_input: String,
 }
@@ -102,6 +103,7 @@ impl Input {
             mouse_y: 0,
             mouse_xrel: 0,
             mouse_yrel: 0,
+            mouse_wheel: 0,
 
             text_input: String::with_capacity(1024),
         }
@@ -114,6 +116,7 @@ impl Input {
         self.text_input.clear();
         self.mouse_xrel = 0;
         self.mouse_yrel = 0;
+        self.mouse_wheel = 0;
 
         for event in self.event_pump.poll_iter() {
             match event {
@@ -143,8 +146,11 @@ impl Input {
                 Event::MouseMotion { x, y, xrel, yrel, .. } => {
                     self.mouse_x = x;
                     self.mouse_y = y;
-                    self.mouse_xrel = xrel;
-                    self.mouse_yrel = yrel;
+                    self.mouse_xrel += xrel;
+                    self.mouse_yrel += yrel;
+                }
+                Event::MouseWheel { y, ..} => {
+                    self.mouse_wheel += y;
                 }
                 Event::TextInput { text, .. } => {
                     self.text_input.clone_from(&text);
