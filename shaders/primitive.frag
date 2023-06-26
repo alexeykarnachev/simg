@@ -23,6 +23,8 @@ void main() {
         color.a *= tex_color.a;
     }
 
+    color.a = 1.0;
+
     fs_color = color;
 }
 

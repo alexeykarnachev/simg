@@ -3,6 +3,7 @@ use sdl2::mouse::MouseButton;
 use simg::color::*;
 use simg::input::Input;
 // use obj::{load_obj, Obj};
+use simg::mesh::*;
 use simg::renderer::Projection;
 use simg::renderer::Projection::*;
 use simg::renderer::Renderer;
@@ -79,6 +80,8 @@ struct Game {
     renderer: Renderer,
 
     camera: Camera,
+
+    dog: usize,
 }
 
 impl Game {
@@ -86,7 +89,7 @@ impl Game {
         let sdl2 = sdl2::init().unwrap();
         let timer = sdl2.timer().unwrap();
         let input = Input::new(&sdl2);
-        let renderer = Renderer::new(
+        let mut renderer = Renderer::new(
             &sdl2,
             "Game",
             WINDOW_WIDTH as u32,
@@ -97,7 +100,8 @@ impl Game {
         let camera =
             Camera::new(point![0.0, 0.0, 0.0], 45.0, -45.0, 5.0, 60.0);
 
-        // renderer.load_mesh_from_obj_bytes(DOG_OBJ);
+        let dog_mesh = Mesh::from_obj_bytes(DOG_OBJ);
+        let dog = renderer.load_mesh(&dog_mesh);
 
         Self {
             dt: 0.0,
@@ -109,6 +113,7 @@ impl Game {
             input,
             renderer,
             camera,
+            dog,
         }
     }
 
@@ -139,6 +144,7 @@ impl Game {
 
     fn update_renderer(&mut self) {
         self.renderer.set_proj(self.camera.get_proj());
+        self.renderer.draw_mesh(self.dog);
 
         // let triangle = Triangle::new(
         //     point![0.0, 0.0, 0.0],
