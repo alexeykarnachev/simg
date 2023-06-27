@@ -153,17 +153,12 @@ impl Game {
         self.renderer.set_tex(self.dog_tex, false);
         self.renderer.draw_mesh(self.dog_mesh);
 
-        // let triangle = Triangle::new(
-        //     point![0.0, 0.0, 0.0],
-        //     point![0.5, 0.0, 0.0],
-        //     point![0.0, 2.0, 0.0],
-        // );
-        // self.renderer.draw_triangle(triangle, None, Some(RED));
-
-        // for v in self.dog_obj.vertices.iter() {
-        //     let position = point![v.position[0], v.position[1], v.position[2]];
-        //     self.renderer.draw_vertex(position, None, Some(RED));
-        // }
+        let triangle = Triangle::new(
+            point![0.0, 0.0, 0.0],
+            point![0.5, 0.0, 0.0],
+            point![0.0, 2.0, 0.0],
+        );
+        self.renderer.draw_triangle(triangle, None, Some(RED));
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();

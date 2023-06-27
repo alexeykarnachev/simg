@@ -24,7 +24,7 @@ const MAX_N_VERTICES: usize = 1 << 15;
 const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_VERTEX_BUFFERS: usize = 128;
-const MAX_N_BATCHES: usize = MAX_N_TEXTURES;
+const MAX_N_DRAW_CALLS: usize = 1024;
 
 #[derive(Default, Copy, Clone, PartialEq)]
 struct VertexBufferGL {
@@ -425,7 +425,7 @@ impl Texture {
 }
 
 #[derive(Clone, Copy)]
-struct BatchInfo {
+struct DrawCall {
     vertex_buffer_idx: usize,
     start: usize,
     count: usize,
@@ -449,7 +449,7 @@ pub enum Projection {
     },
 }
 
-impl BatchInfo {
+impl DrawCall {
     pub fn new(
         vertex_buffer_idx: usize,
         start: usize,
@@ -468,15 +468,16 @@ impl BatchInfo {
     }
 
     pub fn get_next(&self) -> Self {
-        let mut batch = *self;
-        batch.count = 0;
-        batch.start = self.start + self.count;
+        let mut call = *self;
+        call.vertex_buffer_idx = 0;
+        call.count = 0;
+        call.start = self.start + self.count;
 
-        batch
+        call
     }
 }
 
-impl Default for BatchInfo {
+impl Default for DrawCall {
     fn default() -> Self {
         Self {
             vertex_buffer_idx: 0,
@@ -508,8 +509,8 @@ pub struct Renderer {
     colors: [f32; MAX_N_VERTICES * 4],
     has_tex: [u8; MAX_N_VERTICES],
 
-    curr_batch_idx: usize,
-    batch_infos: [BatchInfo; MAX_N_BATCHES],
+    curr_draw_call_idx: usize,
+    draw_calls: [DrawCall; MAX_N_DRAW_CALLS],
 }
 
 impl Renderer {
@@ -627,7 +628,7 @@ impl Renderer {
             }
 
             // -----------------------------------------------------------
-            // Default vertex buffer (for batch rendering)
+            // Default vertex buffer (for draw_call rendering)
             vertex_buffers[0] =
                 VertexBufferGL::new_empty(&gl, MAX_N_VERTICES);
 
@@ -695,8 +696,8 @@ impl Renderer {
             colors: [0.0; MAX_N_VERTICES * 4],
             has_tex: [0; MAX_N_VERTICES],
 
-            curr_batch_idx: 0,
-            batch_infos: [BatchInfo::default(); MAX_N_BATCHES],
+            curr_draw_call_idx: 0,
+            draw_calls: [DrawCall::default(); MAX_N_DRAW_CALLS],
         }
     }
 
@@ -800,8 +801,8 @@ impl Renderer {
         texcoord: Option<Point2<f32>>,
         color: Option<Color>,
     ) {
-        let batch_info = &mut self.batch_infos[self.curr_batch_idx];
-        let idx = batch_info.start + batch_info.count;
+        let draw_call = &mut self.draw_calls[self.curr_draw_call_idx];
+        let idx = draw_call.start + draw_call.count;
         self.positions[idx * 3 + 0] = position.x;
         self.positions[idx * 3 + 1] = position.y;
         self.positions[idx * 3 + 2] = position.z;
@@ -826,7 +827,7 @@ impl Renderer {
             self.has_tex[idx] = 0;
         }
 
-        batch_info.count += 1;
+        draw_call.count += 1;
     }
 
     pub fn draw_triangle(
@@ -886,47 +887,48 @@ impl Renderer {
     }
 
     pub fn draw_mesh(&mut self, mesh_idx: usize) {
-        let mut batch_info =
-            &mut self.batch_infos[self.get_new_batch_idx()];
+        let mut draw_call =
+            &mut self.draw_calls[self.get_new_draw_call_idx()];
         let vb = self.vertex_buffers[mesh_idx];
 
-        batch_info.vertex_buffer_idx = mesh_idx;
-        batch_info.count = vb.n_vertices;
+        draw_call.vertex_buffer_idx = mesh_idx;
+        draw_call.count = vb.n_vertices;
+        self.get_new_draw_call_idx();
     }
 
     pub fn set_proj(&mut self, proj: Projection) {
-        if self.batch_infos[self.curr_batch_idx].proj != proj {
-            self.batch_infos[self.get_new_batch_idx()].proj = proj;
+        if self.draw_calls[self.curr_draw_call_idx].proj != proj {
+            self.draw_calls[self.get_new_draw_call_idx()].proj = proj;
         }
     }
 
     pub fn set_tex(&mut self, tex: Texture, is_font: bool) {
-        let curr_tex = self.batch_infos[self.curr_batch_idx].tex;
+        let curr_tex = self.draw_calls[self.curr_draw_call_idx].tex;
         if curr_tex.is_none() || curr_tex.is_some_and(|t| t != tex) {
-            let batch_info =
-                &mut self.batch_infos[self.get_new_batch_idx()];
-            batch_info.tex = Some(tex);
-            batch_info.is_font = is_font;
+            let draw_call =
+                &mut self.draw_calls[self.get_new_draw_call_idx()];
+            draw_call.tex = Some(tex);
+            draw_call.is_font = is_font;
         }
     }
 
-    fn get_new_batch_idx(&mut self) -> usize {
-        if self.batch_infos[self.curr_batch_idx].count == 0 {
-            self.curr_batch_idx
-        } else if self.curr_batch_idx + 1 < MAX_N_BATCHES {
-            let curr_batch = self.batch_infos[self.curr_batch_idx];
-            self.batch_infos[self.curr_batch_idx + 1] =
-                curr_batch.get_next();
-            self.curr_batch_idx += 1;
-            self.curr_batch_idx
+    fn get_new_draw_call_idx(&mut self) -> usize {
+        if self.draw_calls[self.curr_draw_call_idx].count == 0 {
+            self.curr_draw_call_idx
+        } else if self.curr_draw_call_idx + 1 < MAX_N_DRAW_CALLS {
+            let curr_draw_call = self.draw_calls[self.curr_draw_call_idx];
+            self.draw_calls[self.curr_draw_call_idx + 1] =
+                curr_draw_call.get_next();
+            self.curr_draw_call_idx += 1;
+            self.curr_draw_call_idx
         } else {
-            panic!("Maximum number of batches ({}) has been reached, can't start the new one. Call `end_drawing` to render all batches before starting the new one", self.curr_batch_idx + 1);
+            panic!("Maximum number of draw_calls ({}) has been reached, can't start the new one. Call `end_drawing` to render all draw_calls before starting the new one", self.curr_draw_call_idx + 1);
         }
     }
 
-    pub fn reset_batches(&mut self) {
-        self.curr_batch_idx = 0;
-        self.batch_infos[0] = BatchInfo::default();
+    pub fn reset_draw_calls(&mut self) {
+        self.curr_draw_call_idx = 0;
+        self.draw_calls[0] = DrawCall::default();
     }
 
     pub fn end_drawing(
@@ -966,10 +968,10 @@ impl Renderer {
             let mut curr_vb_idx = None;
             let mut curr_tex = None;
 
-            for i_batch in 0..=self.curr_batch_idx {
-                let batch_info = self.batch_infos[i_batch];
-                let vb_idx = batch_info.vertex_buffer_idx;
-                let proj = batch_info.proj;
+            for i_draw_call in 0..=self.curr_draw_call_idx {
+                let draw_call = self.draw_calls[i_draw_call];
+                let vb_idx = draw_call.vertex_buffer_idx;
+                let proj = draw_call.proj;
                 let transform =
                     get_transform_from_proj(proj, self.window_size);
 
@@ -988,8 +990,8 @@ impl Renderer {
 
                 // Update default vertex buffer
                 if vb_idx == 0 {
-                    let start = batch_info.start;
-                    let count = batch_info.count;
+                    let start = draw_call.start;
+                    let count = draw_call.count;
                     let vb = &mut self.vertex_buffers[vb_idx];
                     vb.set_positions(
                         &self.gl,
@@ -1009,7 +1011,7 @@ impl Renderer {
                     );
                 }
 
-                if let Some(tex) = batch_info.tex {
+                if let Some(tex) = draw_call.tex {
                     if curr_tex.is_none()
                         || curr_tex.is_some_and(|t| t != tex)
                     {
@@ -1020,7 +1022,7 @@ impl Renderer {
                         self.program.set_uniform_1_u32(
                             &self.gl,
                             "u_is_font",
-                            batch_info.is_font as u32,
+                            draw_call.is_font as u32,
                         );
                     }
                 }
@@ -1041,7 +1043,7 @@ impl Renderer {
                     self.gl.draw_arrays(
                         glow::TRIANGLES,
                         0,
-                        batch_info.count as i32,
+                        draw_call.count as i32,
                     );
                 }
             }
@@ -1111,7 +1113,7 @@ impl Renderer {
             }
         }
 
-        self.reset_batches();
+        self.reset_draw_calls();
     }
 
     pub fn swap_window(&self) {
