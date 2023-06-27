@@ -13,10 +13,7 @@ void main() {
     vec4 color = vs_color;
 
     if (vs_has_tex == UTRUE) {
-        vec2 tex_size = vec2(textureSize(u_tex, 0));
         vec2 uv = vs_texcoord;
-        uv /= tex_size;
-
         vec4 tex_color = texture(u_tex, uv); 
 
         if (u_is_font == UTRUE) {
@@ -26,6 +23,9 @@ void main() {
         }
     }
 
+    // color.r = vs_texcoord.x;
+    // color.g = vs_texcoord.y;
+    // color.b = 0.0;
     fs_color = color;
 }
 

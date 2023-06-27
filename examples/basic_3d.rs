@@ -2,14 +2,16 @@ use nalgebra::{point, Point3};
 use sdl2::mouse::MouseButton;
 use simg::color::*;
 use simg::input::Input;
+use simg::program::Texture;
 // use obj::{load_obj, Obj};
+use image::ImageFormat;
 use simg::mesh::*;
 use simg::renderer::Projection;
 use simg::renderer::Projection::*;
 use simg::renderer::Renderer;
 use simg::shapes::*;
 
-const MSAA: i32 = 16;
+const MSAA: i32 = 0;
 
 const GAME_DT: f32 = 0.005;
 
@@ -17,6 +19,7 @@ const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 
 const DOG_OBJ: &[u8] = include_bytes!("./assets/basic_3d/dog/dog.obj");
+const DOG_TEX: &[u8] = include_bytes!("./assets/basic_3d/dog/color.png");
 
 struct Camera {
     pub target: Point3<f32>,
@@ -81,7 +84,8 @@ struct Game {
 
     camera: Camera,
 
-    dog: usize,
+    dog_mesh: usize,
+    dog_tex: Texture,
 }
 
 impl Game {
@@ -100,8 +104,9 @@ impl Game {
         let camera =
             Camera::new(point![0.0, 0.0, 0.0], 45.0, -45.0, 5.0, 60.0);
 
-        let dog_mesh = Mesh::from_obj_bytes(DOG_OBJ);
-        let dog = renderer.load_mesh(&dog_mesh);
+        let dog_mesh = renderer.load_mesh(&Mesh::from_obj_bytes(DOG_OBJ));
+        let dog_tex = renderer
+            .load_texture_from_image_bytes(DOG_TEX, ImageFormat::Png);
 
         Self {
             dt: 0.0,
@@ -113,7 +118,8 @@ impl Game {
             input,
             renderer,
             camera,
-            dog,
+            dog_mesh,
+            dog_tex,
         }
     }
 
@@ -144,7 +150,8 @@ impl Game {
 
     fn update_renderer(&mut self) {
         self.renderer.set_proj(self.camera.get_proj());
-        self.renderer.draw_mesh(self.dog);
+        self.renderer.set_tex(self.dog_tex, false);
+        self.renderer.draw_mesh(self.dog_mesh);
 
         // let triangle = Triangle::new(
         //     point![0.0, 0.0, 0.0],

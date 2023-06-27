@@ -8,8 +8,8 @@ use crate::mesh::Mesh;
 use crate::program::*;
 use crate::shapes::*;
 use image::{
-    load_from_memory_with_format, DynamicImage, EncodableLayout,
-    ImageFormat,
+    imageops::flip_vertical_in_place, load_from_memory_with_format,
+    DynamicImage, EncodableLayout, ImageFormat,
 };
 use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
 use std::{collections::HashMap, mem::size_of, num::NonZeroU32};
@@ -46,7 +46,7 @@ impl VertexBufferGL {
         colors: Option<&[f32]>,
         texcoords: Option<&[f32]>,
         has_tex: Option<&[u8]>,
-        indices: Option<&[u16]>,
+        indices: Option<&[u32]>,
     ) -> Self {
         let n_vertices = positions.len() / 3;
         let mut n_indices = 0;
@@ -226,7 +226,7 @@ impl VertexBufferGL {
         }
     }
 
-    pub fn set_indices(&mut self, gl: &glow::Context, data: &[u16]) {
+    pub fn set_indices(&mut self, gl: &glow::Context, data: &[u32]) {
         unsafe {
             gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, self.indices_vbo);
             gl.buffer_sub_data_u8_slice(
@@ -391,12 +391,12 @@ impl Texture {
             gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_WRAP_S,
-                glow::CLAMP_TO_EDGE as i32,
+                glow::REPEAT as i32,
             );
             gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_WRAP_T,
-                glow::CLAMP_TO_EDGE as i32,
+                glow::REPEAT as i32,
             );
             gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
@@ -579,6 +579,10 @@ impl Renderer {
         let postfx_tex;
         let postfx_fbo;
         unsafe {
+            gl.enable(glow::DEPTH_TEST);
+            gl.enable(glow::CULL_FACE);
+            gl.cull_face(glow::BACK);
+            gl.front_face(glow::CCW);
             gl.enable(glow::BLEND);
             gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
 
@@ -587,8 +591,10 @@ impl Renderer {
             let n_samples = get_msaa_max_n_samples(&gl, msaa);
             if n_samples > 0 {
                 ms_fbo = Some(gl.create_framebuffer().unwrap());
-                let ms_rbo = gl.create_renderbuffer().unwrap();
-                gl.bind_renderbuffer(glow::RENDERBUFFER, Some(ms_rbo));
+                gl.bind_framebuffer(glow::FRAMEBUFFER, ms_fbo);
+
+                let ms_color_rbo = Some(gl.create_renderbuffer().unwrap());
+                gl.bind_renderbuffer(glow::RENDERBUFFER, ms_color_rbo);
                 gl.renderbuffer_storage_multisample(
                     glow::RENDERBUFFER,
                     n_samples as i32,
@@ -596,12 +602,27 @@ impl Renderer {
                     window_size.0 as i32,
                     window_size.1 as i32,
                 );
-                gl.bind_framebuffer(glow::FRAMEBUFFER, ms_fbo);
                 gl.framebuffer_renderbuffer(
                     glow::FRAMEBUFFER,
                     glow::COLOR_ATTACHMENT0,
                     glow::RENDERBUFFER,
-                    Some(ms_rbo),
+                    ms_color_rbo,
+                );
+
+                let ms_depth_rbo = Some(gl.create_renderbuffer().unwrap());
+                gl.bind_renderbuffer(glow::RENDERBUFFER, ms_depth_rbo);
+                gl.renderbuffer_storage_multisample(
+                    glow::RENDERBUFFER,
+                    n_samples as i32,
+                    glow::DEPTH_COMPONENT16,
+                    window_size.0 as i32,
+                    window_size.1 as i32,
+                );
+                gl.framebuffer_renderbuffer(
+                    glow::FRAMEBUFFER,
+                    glow::DEPTH_ATTACHMENT,
+                    glow::RENDERBUFFER,
+                    ms_depth_rbo,
                 );
             }
 
@@ -613,6 +634,23 @@ impl Renderer {
             // -----------------------------------------------------------
             // Postfx buffer
             postfx_fbo = gl.create_framebuffer().unwrap();
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(postfx_fbo));
+
+            let rbo = Some(gl.create_renderbuffer().unwrap());
+            gl.bind_renderbuffer(glow::RENDERBUFFER, rbo);
+            gl.renderbuffer_storage(
+                glow::RENDERBUFFER,
+                glow::DEPTH_COMPONENT16,
+                window_size.0 as i32,
+                window_size.1 as i32,
+            );
+            gl.framebuffer_renderbuffer(
+                glow::FRAMEBUFFER,
+                glow::DEPTH_ATTACHMENT,
+                glow::RENDERBUFFER,
+                rbo,
+            );
+
             postfx_tex = Texture::new_gl(
                 &gl,
                 None,
@@ -623,7 +661,7 @@ impl Renderer {
                 glow::FLOAT,
                 glow::NEAREST,
             );
-            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(postfx_fbo));
+
             gl.framebuffer_texture_2d(
                 glow::FRAMEBUFFER,
                 glow::COLOR_ATTACHMENT0,
@@ -725,6 +763,7 @@ impl Renderer {
     ) -> Texture {
         let image = load_from_memory_with_format(bytes, format)
             .expect("Can't decode image bytes")
+            .flipv()
             .into_rgba8();
 
         self.load_texture_from_pixel_bytes(
@@ -861,13 +900,13 @@ impl Renderer {
         }
     }
 
-    pub fn set_tex(&mut self, tex: Texture) {
+    pub fn set_tex(&mut self, tex: Texture, is_font: bool) {
         let curr_tex = self.batch_infos[self.curr_batch_idx].tex;
         if curr_tex.is_none() || curr_tex.is_some_and(|t| t != tex) {
             let batch_info =
                 &mut self.batch_infos[self.get_new_batch_idx()];
             batch_info.tex = Some(tex);
-            batch_info.is_font = true;
+            batch_info.is_font = is_font;
         }
     }
 
@@ -995,7 +1034,7 @@ impl Renderer {
                     self.gl.draw_elements(
                         glow::TRIANGLES,
                         vb.n_indices as i32,
-                        glow::UNSIGNED_SHORT,
+                        glow::UNSIGNED_INT,
                         0,
                     );
                 } else {

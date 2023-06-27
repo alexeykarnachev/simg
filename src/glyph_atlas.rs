@@ -77,8 +77,14 @@ impl GlyphAtlas {
             let ic = (i_glyph % n_glyphs_per_row) * max_glyph_width;
             let metric = &metrics[i_glyph];
             let texcoords = Rectangle::from_top_left(
-                Point2::new(ic as f32, (image_height - ir) as f32),
-                Vector2::new(metric.width as f32, metric.height as f32),
+                Point2::new(
+                    ic as f32 / image_width as f32,
+                    (image_height - ir) as f32 / image_height as f32,
+                ),
+                Vector2::new(
+                    metric.width as f32 / image_width as f32,
+                    metric.height as f32 / image_height as f32,
+                ),
             );
             let offset =
                 Point2::new(metric.xmin as f32, metric.ymin as f32);
