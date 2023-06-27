@@ -21,7 +21,7 @@ impl Program {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Texture {
     pub idx: u32,
     pub width: u32,

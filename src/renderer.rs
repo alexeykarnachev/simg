@@ -24,7 +24,6 @@ const MAX_N_VERTICES: usize = 1 << 15;
 const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
 const MAX_N_VERTEX_BUFFERS: usize = 128;
-const MAX_N_DRAW_CALLS: usize = 1024;
 
 #[derive(Default, Copy, Clone, PartialEq)]
 struct VertexBufferGL {
@@ -424,7 +423,7 @@ impl Texture {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct DrawCall {
     vertex_buffer_idx: usize,
     start: usize,
@@ -434,7 +433,7 @@ struct DrawCall {
     is_font: bool,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Projection {
     ProjScreen,
     Proj2D {
@@ -509,8 +508,7 @@ pub struct Renderer {
     colors: [f32; MAX_N_VERTICES * 4],
     has_tex: [u8; MAX_N_VERTICES],
 
-    curr_draw_call_idx: usize,
-    draw_calls: [DrawCall; MAX_N_DRAW_CALLS],
+    draw_calls: Vec<DrawCall>,
 }
 
 impl Renderer {
@@ -696,8 +694,7 @@ impl Renderer {
             colors: [0.0; MAX_N_VERTICES * 4],
             has_tex: [0; MAX_N_VERTICES],
 
-            curr_draw_call_idx: 0,
-            draw_calls: [DrawCall::default(); MAX_N_DRAW_CALLS],
+            draw_calls: Vec::with_capacity(128),
         }
     }
 
@@ -801,8 +798,13 @@ impl Renderer {
         texcoord: Option<Point2<f32>>,
         color: Option<Color>,
     ) {
-        let draw_call = &mut self.draw_calls[self.curr_draw_call_idx];
+        let mut draw_call = self.get_curr_draw_call();
+        if draw_call.vertex_buffer_idx != 0 {
+            draw_call = self.get_new_draw_call();
+        }
         let idx = draw_call.start + draw_call.count;
+        draw_call.count += 1;
+
         self.positions[idx * 3 + 0] = position.x;
         self.positions[idx * 3 + 1] = position.y;
         self.positions[idx * 3 + 2] = position.z;
@@ -826,8 +828,6 @@ impl Renderer {
         } else {
             self.has_tex[idx] = 0;
         }
-
-        draw_call.count += 1;
     }
 
     pub fn draw_triangle(
@@ -887,48 +887,46 @@ impl Renderer {
     }
 
     pub fn draw_mesh(&mut self, mesh_idx: usize) {
-        let mut draw_call =
-            &mut self.draw_calls[self.get_new_draw_call_idx()];
         let vb = self.vertex_buffers[mesh_idx];
 
+        let mut draw_call = self.get_new_draw_call();
         draw_call.vertex_buffer_idx = mesh_idx;
         draw_call.count = vb.n_vertices;
-        self.get_new_draw_call_idx();
     }
 
     pub fn set_proj(&mut self, proj: Projection) {
-        if self.draw_calls[self.curr_draw_call_idx].proj != proj {
-            self.draw_calls[self.get_new_draw_call_idx()].proj = proj;
+        if self.get_curr_draw_call().proj != proj {
+            self.get_new_draw_call().proj = proj;
         }
     }
 
     pub fn set_tex(&mut self, tex: Texture, is_font: bool) {
-        let curr_tex = self.draw_calls[self.curr_draw_call_idx].tex;
+        let curr_tex = self.get_curr_draw_call().tex;
         if curr_tex.is_none() || curr_tex.is_some_and(|t| t != tex) {
-            let draw_call =
-                &mut self.draw_calls[self.get_new_draw_call_idx()];
+            let draw_call = self.get_new_draw_call();
             draw_call.tex = Some(tex);
             draw_call.is_font = is_font;
         }
     }
 
-    fn get_new_draw_call_idx(&mut self) -> usize {
-        if self.draw_calls[self.curr_draw_call_idx].count == 0 {
-            self.curr_draw_call_idx
-        } else if self.curr_draw_call_idx + 1 < MAX_N_DRAW_CALLS {
-            let curr_draw_call = self.draw_calls[self.curr_draw_call_idx];
-            self.draw_calls[self.curr_draw_call_idx + 1] =
-                curr_draw_call.get_next();
-            self.curr_draw_call_idx += 1;
-            self.curr_draw_call_idx
-        } else {
-            panic!("Maximum number of draw_calls ({}) has been reached, can't start the new one. Call `end_drawing` to render all draw_calls before starting the new one", self.curr_draw_call_idx + 1);
+    fn get_curr_draw_call(&mut self) -> &mut DrawCall {
+        if self.draw_calls.len() == 0 {
+            return self.get_new_draw_call();
         }
+
+        let idx = self.draw_calls.len() - 1;
+        &mut self.draw_calls[idx]
     }
 
-    pub fn reset_draw_calls(&mut self) {
-        self.curr_draw_call_idx = 0;
-        self.draw_calls[0] = DrawCall::default();
+    fn get_new_draw_call(&mut self) -> &mut DrawCall {
+        if self.draw_calls.len() == 0 {
+            self.draw_calls.push(DrawCall::default());
+        } else if self.get_curr_draw_call().count != 0 {
+            let next = self.get_curr_draw_call().get_next();
+            self.draw_calls.push(next);
+        }
+
+        self.get_curr_draw_call()
     }
 
     pub fn end_drawing(
@@ -968,8 +966,7 @@ impl Renderer {
             let mut curr_vb_idx = None;
             let mut curr_tex = None;
 
-            for i_draw_call in 0..=self.curr_draw_call_idx {
-                let draw_call = self.draw_calls[i_draw_call];
+            for draw_call in self.draw_calls.iter() {
                 let vb_idx = draw_call.vertex_buffer_idx;
                 let proj = draw_call.proj;
                 let transform =
@@ -1113,7 +1110,7 @@ impl Renderer {
             }
         }
 
-        self.reset_draw_calls();
+        self.draw_calls.clear();
     }
 
     pub fn swap_window(&self) {
