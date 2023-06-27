@@ -393,6 +393,8 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Update renderer (draw all the stuff)
+        self.renderer.set_depth_test(false);
+
         self.draw_scene();
         match self.state {
             StartingLevel => {
@@ -664,7 +666,7 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw enemy names
-        self.renderer.set_tex(self.glyph_tex_small);
+        self.renderer.set_tex(self.glyph_tex_small, true);
 
         for enemy in self.enemies.iter().filter(|e| e.is_alive) {
             let mut position = enemy.circle.get_top();
@@ -784,7 +786,7 @@ impl Game {
 
     fn draw_starting_level_state(&mut self) {
         self.renderer.set_proj(ProjScreen);
-        self.renderer.set_tex(self.glyph_tex_small);
+        self.renderer.set_tex(self.glyph_tex_small, true);
         self.draw_screen_dim();
 
         // ---------------------------------------------------------------
@@ -802,7 +804,7 @@ impl Game {
 
     fn draw_playing_state(&mut self) {
         self.renderer.set_proj(ProjScreen);
-        self.renderer.set_tex(self.glyph_tex_small);
+        self.renderer.set_tex(self.glyph_tex_small, true);
 
         // ---------------------------------------------------------------
         // Draw Pause command
@@ -819,7 +821,7 @@ impl Game {
 
     fn draw_pause_state(&mut self) {
         self.renderer.set_proj(ProjScreen);
-        self.renderer.set_tex(self.glyph_tex_small);
+        self.renderer.set_tex(self.glyph_tex_small, true);
 
         self.draw_screen_dim();
 
@@ -838,7 +840,7 @@ impl Game {
 
     fn draw_loss_state(&mut self) {
         self.renderer.set_proj(ProjScreen);
-        self.renderer.set_tex(self.glyph_tex_small);
+        self.renderer.set_tex(self.glyph_tex_small, true);
 
         self.draw_screen_dim();
 

@@ -431,6 +431,7 @@ struct DrawCall {
     tex: Option<Texture>,
     proj: Projection,
     is_font: bool,
+    depth_test: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -455,6 +456,7 @@ impl DrawCall {
         tex: Option<Texture>,
         proj: Projection,
         is_font: bool,
+        depth_test: bool,
     ) -> Self {
         Self {
             vertex_buffer_idx,
@@ -463,6 +465,7 @@ impl DrawCall {
             tex,
             proj,
             is_font,
+            depth_test,
         }
     }
 
@@ -485,6 +488,7 @@ impl Default for DrawCall {
             tex: None,
             proj: Projection::ProjScreen,
             is_font: false,
+            depth_test: true,
         }
     }
 }
@@ -798,10 +802,7 @@ impl Renderer {
         texcoord: Option<Point2<f32>>,
         color: Option<Color>,
     ) {
-        let mut draw_call = self.get_curr_draw_call();
-        if draw_call.vertex_buffer_idx != 0 {
-            draw_call = self.get_new_draw_call();
-        }
+        let draw_call = self.get_default_draw_call();
         let idx = draw_call.start + draw_call.count;
         draw_call.count += 1;
 
@@ -900,6 +901,12 @@ impl Renderer {
         }
     }
 
+    pub fn set_depth_test(&mut self, is_set: bool) {
+        if self.get_curr_draw_call().depth_test != is_set {
+            self.get_new_draw_call().depth_test = is_set;
+        }
+    }
+
     pub fn set_tex(&mut self, tex: Texture, is_font: bool) {
         let curr_tex = self.get_curr_draw_call().tex;
         if curr_tex.is_none() || curr_tex.is_some_and(|t| t != tex) {
@@ -929,6 +936,14 @@ impl Renderer {
         self.get_curr_draw_call()
     }
 
+    fn get_default_draw_call(&mut self) -> &mut DrawCall {
+        if self.get_curr_draw_call().vertex_buffer_idx != 0 {
+            return self.get_new_draw_call();
+        }
+
+        self.get_curr_draw_call()
+    }
+
     pub fn end_drawing(
         &mut self,
         clear_color: Color,
@@ -952,21 +967,20 @@ impl Renderer {
                 self.window_size.0 as i32,
                 self.window_size.1 as i32,
             );
+            clear_framebuffer(&self.gl, clear_color, true);
 
-            self.gl.clear_color(
-                clear_color.r,
-                clear_color.g,
-                clear_color.b,
-                clear_color.a,
-            );
-            self.gl
-                .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             self.program.bind(&self.gl);
 
             let mut curr_vb_idx = None;
             let mut curr_tex = None;
 
             for draw_call in self.draw_calls.iter() {
+                if draw_call.depth_test {
+                    self.gl.enable(glow::DEPTH_TEST);
+                } else {
+                    self.gl.disable(glow::DEPTH_TEST);
+                }
+
                 let vb_idx = draw_call.vertex_buffer_idx;
                 let proj = draw_call.proj;
                 let transform =
@@ -1050,12 +1064,15 @@ impl Renderer {
 
             // Blit ms to postfx
             if self.ms_fbo.is_some() {
-                self.gl
-                    .bind_framebuffer(glow::READ_FRAMEBUFFER, self.ms_fbo);
                 self.gl.bind_framebuffer(
                     glow::DRAW_FRAMEBUFFER,
                     Some(self.postfx_fbo),
                 );
+                clear_framebuffer(&self.gl, clear_color, true);
+
+                self.gl
+                    .bind_framebuffer(glow::READ_FRAMEBUFFER, self.ms_fbo);
+
                 self.gl.blit_framebuffer(
                     0,
                     0,
@@ -1086,15 +1103,19 @@ impl Renderer {
                     self.window_size.0 as i32,
                     self.window_size.1 as i32,
                 );
+                clear_framebuffer(&self.gl, clear_color, true);
 
                 self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             // Or just blit the postfx to the screen
             } else {
+                self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+                clear_framebuffer(&self.gl, clear_color, true);
+
                 self.gl.bind_framebuffer(
                     glow::READ_FRAMEBUFFER,
                     Some(self.postfx_fbo),
                 );
-                self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+
                 self.gl.blit_framebuffer(
                     0,
                     0,
@@ -1142,6 +1163,17 @@ fn get_msaa_max_n_samples(
     };
 
     n_samples
+}
+
+fn clear_framebuffer(gl: &glow::Context, color: Color, depth: bool) {
+    unsafe {
+        gl.clear_color(color.r, color.g, color.b, color.a);
+        let mut flags = glow::COLOR_BUFFER_BIT;
+        if depth {
+            flags |= glow::DEPTH_BUFFER_BIT;
+        }
+        gl.clear(flags);
+    }
 }
 
 fn get_transform_from_proj(

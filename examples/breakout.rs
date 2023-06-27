@@ -499,6 +499,8 @@ impl Game {
     }
 
     fn update_renderer(&mut self) {
+        self.renderer.set_depth_test(false);
+
         // Draw objects and playing filed (w/o texture)
         self.renderer.set_proj(ProjScreen);
         self.renderer.draw_rect(self.frame, None, Some(WHITE));
@@ -508,14 +510,14 @@ impl Game {
         self.draw_blocks();
 
         // Draw large texts:
-        self.renderer.set_tex(self.glyph_tex_large);
+        self.renderer.set_tex(self.glyph_tex_large, true);
         if let Some(time) = self.game_over_time {
             self.draw_game_over(time);
         }
         self.draw_scores();
 
         // Draw small texts
-        self.renderer.set_tex(self.glyph_tex_small);
+        self.renderer.set_tex(self.glyph_tex_small, true);
         if self.state == State::NotStarted {
             self.draw_press_space();
         }

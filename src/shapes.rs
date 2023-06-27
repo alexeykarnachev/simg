@@ -390,7 +390,7 @@ impl Circle {
             let j = (i + 1) % (CIRCLE_N_TRIANGLES);
             let b = UNIT_CIRCLE_POINTS[j] * self.radius + a.coords;
             let c = UNIT_CIRCLE_POINTS[i] * self.radius + a.coords;
-            triangles[i] = Triangle::new_2d(a, b, c);
+            triangles[i] = Triangle::new_2d(c, b, a);
         }
 
         triangles
