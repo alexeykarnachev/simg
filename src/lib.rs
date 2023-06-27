@@ -7,6 +7,5 @@ pub mod geometry;
 pub mod glyph_atlas;
 pub mod input;
 pub mod mesh;
-pub mod program;
 pub mod renderer;
 pub mod shapes;

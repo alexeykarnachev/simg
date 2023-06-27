@@ -8,7 +8,6 @@ use simg::common::*;
 use simg::geometry::*;
 use simg::glyph_atlas::GlyphAtlas;
 use simg::input::Input;
-use simg::program::Texture;
 use simg::renderer::Projection::*;
 use simg::renderer::Renderer;
 use simg::shapes::*;

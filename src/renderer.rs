@@ -3,15 +3,15 @@
 
 use crate::camera::*;
 use crate::color::*;
+use crate::common::*;
 use crate::glyph_atlas::*;
 use crate::mesh::Mesh;
-use crate::program::*;
 use crate::shapes::*;
 use image::{
     imageops::flip_vertical_in_place, load_from_memory_with_format,
     DynamicImage, EncodableLayout, ImageFormat,
 };
-use nalgebra::{Matrix4, Point2, Point3, Vector2, Vector3};
+use nalgebra::{point, Matrix4, Point2, Point3, Vector2, Vector3};
 use std::{collections::HashMap, mem::size_of, num::NonZeroU32};
 
 use glow::{HasContext, NativeTexture};
@@ -949,6 +949,10 @@ impl Renderer {
         clear_color: Color,
         postfx_program: Option<&Program>,
     ) {
+        let screen_rect = Rectangle::new(
+            point![0.0, 0.0],
+            point![self.window_size.0 as f32, self.window_size.1 as f32],
+        );
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
 
@@ -960,14 +964,13 @@ impl Renderer {
                 Some(self.postfx_fbo)
             };
 
-            self.gl.bind_framebuffer(glow::FRAMEBUFFER, out_fbo);
-            self.gl.viewport(
-                0,
-                0,
-                self.window_size.0 as i32,
-                self.window_size.1 as i32,
+            bind_framebuffer(
+                &self.gl,
+                out_fbo,
+                &screen_rect,
+                Some(clear_color),
+                true,
             );
-            clear_framebuffer(&self.gl, clear_color, true);
 
             self.program.bind(&self.gl);
 
@@ -1063,27 +1066,13 @@ impl Renderer {
             // Render the final image
 
             // Blit ms to postfx
-            if self.ms_fbo.is_some() {
-                self.gl.bind_framebuffer(
-                    glow::DRAW_FRAMEBUFFER,
+            if let Some(ms_fbo) = self.ms_fbo {
+                blit_framebuffer(
+                    &self.gl,
+                    ms_fbo,
                     Some(self.postfx_fbo),
-                );
-                clear_framebuffer(&self.gl, clear_color, true);
-
-                self.gl
-                    .bind_framebuffer(glow::READ_FRAMEBUFFER, self.ms_fbo);
-
-                self.gl.blit_framebuffer(
-                    0,
-                    0,
-                    self.window_size.0 as i32,
-                    self.window_size.1 as i32,
-                    0,
-                    0,
-                    self.window_size.0 as i32,
-                    self.window_size.1 as i32,
-                    glow::COLOR_BUFFER_BIT,
-                    glow::NEAREST,
+                    &screen_rect,
+                    &screen_rect,
                 );
             }
 
@@ -1096,37 +1085,22 @@ impl Renderer {
                 self.gl.active_texture(glow::TEXTURE0 + 0);
                 self.postfx_tex.bind(&self.gl);
 
-                self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-                self.gl.viewport(
-                    0,
-                    0,
-                    self.window_size.0 as i32,
-                    self.window_size.1 as i32,
+                bind_framebuffer(
+                    &self.gl,
+                    None,
+                    &screen_rect,
+                    Some(clear_color),
+                    true,
                 );
-                clear_framebuffer(&self.gl, clear_color, true);
-
                 self.gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             // Or just blit the postfx to the screen
             } else {
-                self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
-                clear_framebuffer(&self.gl, clear_color, true);
-
-                self.gl.bind_framebuffer(
-                    glow::READ_FRAMEBUFFER,
-                    Some(self.postfx_fbo),
-                );
-
-                self.gl.blit_framebuffer(
-                    0,
-                    0,
-                    self.window_size.0 as i32,
-                    self.window_size.1 as i32,
-                    0,
-                    0,
-                    self.window_size.0 as i32,
-                    self.window_size.1 as i32,
-                    glow::COLOR_BUFFER_BIT,
-                    glow::NEAREST,
+                blit_framebuffer(
+                    &self.gl,
+                    self.postfx_fbo,
+                    None,
+                    &screen_rect,
+                    &screen_rect,
                 );
             }
         }
@@ -1165,14 +1139,70 @@ fn get_msaa_max_n_samples(
     n_samples
 }
 
-fn clear_framebuffer(gl: &glow::Context, color: Color, depth: bool) {
+fn bind_framebuffer(
+    gl: &glow::Context,
+    fbo: Option<glow::NativeFramebuffer>,
+    viewport: &Rectangle,
+    color: Option<Color>,
+    depth: bool,
+) {
     unsafe {
-        gl.clear_color(color.r, color.g, color.b, color.a);
-        let mut flags = glow::COLOR_BUFFER_BIT;
+        gl.bind_framebuffer(glow::FRAMEBUFFER, fbo);
+        gl.viewport(
+            viewport.get_min_x() as i32,
+            viewport.get_min_y() as i32,
+            viewport.get_max_x() as i32,
+            viewport.get_max_y() as i32,
+        );
+        clear_framebuffer(gl, color, depth);
+    }
+}
+
+fn clear_framebuffer(
+    gl: &glow::Context,
+    color: Option<Color>,
+    depth: bool,
+) {
+    unsafe {
+        let mut flags = 0;
+        if let Some(color) = color {
+            gl.clear_color(color.r, color.g, color.b, color.a);
+            flags |= glow::COLOR_BUFFER_BIT;
+        }
         if depth {
             flags |= glow::DEPTH_BUFFER_BIT;
         }
-        gl.clear(flags);
+        if flags != 0 {
+            gl.clear(flags);
+        }
+    }
+}
+
+fn blit_framebuffer(
+    gl: &glow::Context,
+    src: glow::NativeFramebuffer,
+    dst: Option<glow::NativeFramebuffer>,
+    src_rect: &Rectangle,
+    dst_rect: &Rectangle,
+) {
+    unsafe {
+        gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, dst);
+        clear_framebuffer(gl, Some(BLACK), true);
+
+        gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(src));
+
+        gl.blit_framebuffer(
+            src_rect.get_min_x() as i32,
+            src_rect.get_min_y() as i32,
+            src_rect.get_max_x() as i32,
+            src_rect.get_max_y() as i32,
+            dst_rect.get_min_x() as i32,
+            dst_rect.get_min_y() as i32,
+            dst_rect.get_max_x() as i32,
+            dst_rect.get_max_y() as i32,
+            glow::COLOR_BUFFER_BIT,
+            glow::NEAREST,
+        );
     }
 }
 

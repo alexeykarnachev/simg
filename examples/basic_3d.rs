@@ -1,10 +1,9 @@
+use image::ImageFormat;
 use nalgebra::{point, Point3};
 use sdl2::mouse::MouseButton;
 use simg::color::*;
+use simg::common::*;
 use simg::input::Input;
-use simg::program::Texture;
-// use obj::{load_obj, Obj};
-use image::ImageFormat;
 use simg::mesh::*;
 use simg::renderer::Projection;
 use simg::renderer::Projection::*;

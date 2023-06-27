@@ -1,4 +1,4 @@
-use nalgebra::Vector2;
+use nalgebra::point;
 use simg::color::*;
 use simg::input::Input;
 use simg::renderer::Projection::*;
@@ -74,7 +74,16 @@ impl Game {
     fn update_game(&mut self) {}
 
     fn update_renderer(&mut self) {
-        self.renderer.start_new_batch(ProjScreen, None);
+        self.renderer.set_proj(Proj2D {
+            eye: point![0.0, 0.0],
+            zoom: 1.0,
+            rotation: 0.0,
+        });
+        self.renderer.draw_circle(
+            Circle::new(point![0.0, 0.0], 50.0),
+            None,
+            Some(RED),
+        );
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();
     }
