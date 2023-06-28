@@ -10,7 +10,7 @@ use simg::renderer::Renderer;
 use simg::shapes::*;
 use simg::vertex_buffer::*;
 
-const MSAA: i32 = 0;
+const MSAA: i32 = 16;
 
 const GAME_DT: f32 = 0.005;
 
@@ -103,8 +103,9 @@ impl Game {
         let camera =
             Camera::new(point![0.0, 0.0, 0.0], 45.0, -45.0, 5.0, 60.0);
 
-        let vb_gpu = renderer
-            .load_vertex_buffer(&VertexBufferCPU::from_obj_bytes(DOG_OBJ));
+        let vb_gpu = renderer.load_vertex_buffer_from_cpu(
+            &VertexBufferCPU::from_obj_bytes(DOG_OBJ),
+        );
         let tex = renderer
             .load_texture_from_image_bytes(DOG_TEX, ImageFormat::Png);
 
@@ -159,14 +160,14 @@ impl Game {
         );
         self.renderer.draw_triangle(triangle, None, Some(RED));
 
-        self.renderer.draw_vertex_buffer(self.vb_gpu);
-
         let triangle = Triangle::new(
             point![2.0, 0.0, 0.0],
             point![2.5, 0.0, 0.0],
             point![2.0, 2.0, 0.0],
         );
         self.renderer.draw_triangle(triangle, None, Some(GREEN));
+
+        self.renderer.draw_vertex_buffer(self.vb_gpu);
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();

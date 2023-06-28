@@ -20,18 +20,17 @@ const PRIMITIVE_VERT_SRC: &str = include_str!("../shaders/primitive.vert");
 const PRIMITIVE_FRAG_SRC: &str = include_str!("../shaders/primitive.frag");
 const SCREEN_RECT_VERT_SRC: &str =
     include_str!("../shaders/screen_rect.vert");
-const MAX_N_VERTICES: usize = 1 << 15;
 const MAX_N_PROGRAMS: usize = 16;
 const MAX_N_TEXTURES: usize = 16;
-const MAX_N_VERTEX_BUFFERS: usize = 128;
+const MAX_N_VERTICES: usize = 1 << 15;
 
-#[derive(Default, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 struct VertexBufferGL {
-    vao: Option<glow::NativeVertexArray>,
-    positions_vbo: Option<glow::NativeBuffer>,
-    colors_vbo: Option<glow::NativeBuffer>,
-    texcoords_vbo: Option<glow::NativeBuffer>,
-    has_tex_vbo: Option<glow::NativeBuffer>,
+    vao: glow::NativeVertexArray,
+    positions_vbo: glow::NativeBuffer,
+    colors_vbo: glow::NativeBuffer,
+    texcoords_vbo: glow::NativeBuffer,
+    has_tex_vbo: glow::NativeBuffer,
     indices_vbo: Option<glow::NativeBuffer>,
 
     n_vertices: usize,
@@ -42,9 +41,9 @@ impl VertexBufferGL {
     pub fn new(
         gl: &glow::Context,
         positions: &[f32],
-        colors: Option<&[f32]>,
-        texcoords: Option<&[f32]>,
-        has_tex: Option<&[u8]>,
+        colors: &[f32],
+        texcoords: &[f32],
+        has_tex: &[u8],
         indices: Option<&[u32]>,
     ) -> Self {
         let n_vertices = positions.len() / 3;
@@ -52,17 +51,17 @@ impl VertexBufferGL {
 
         let vao;
         let positions_vbo;
-        let mut texcoords_vbo = None;
-        let mut colors_vbo = None;
-        let mut has_tex_vbo = None;
+        let texcoords_vbo;
+        let colors_vbo;
+        let has_tex_vbo;
         let mut indices_vbo = None;
         let usage = glow::DYNAMIC_DRAW;
         unsafe {
-            vao = Some(gl.create_vertex_array().unwrap());
-            gl.bind_vertex_array(vao);
+            vao = gl.create_vertex_array().unwrap();
+            gl.bind_vertex_array(Some(vao));
 
-            positions_vbo = Some(gl.create_buffer().unwrap());
-            gl.bind_buffer(glow::ARRAY_BUFFER, positions_vbo);
+            positions_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(positions_vbo));
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 cast_slice_to_u8(positions),
@@ -71,61 +70,35 @@ impl VertexBufferGL {
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
 
-            if let Some(texcoords) = texcoords {
-                texcoords_vbo = Some(gl.create_buffer().unwrap());
-                gl.bind_buffer(glow::ARRAY_BUFFER, texcoords_vbo);
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    cast_slice_to_u8(texcoords),
-                    usage,
-                );
-                gl.enable_vertex_attrib_array(1);
-                gl.vertex_attrib_pointer_f32(
-                    1,
-                    2,
-                    glow::FLOAT,
-                    false,
-                    0,
-                    0,
-                );
-            }
+            texcoords_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(texcoords_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                cast_slice_to_u8(texcoords),
+                usage,
+            );
+            gl.enable_vertex_attrib_array(1);
+            gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 0, 0);
 
-            if let Some(colors) = colors {
-                colors_vbo = Some(gl.create_buffer().unwrap());
-                gl.bind_buffer(glow::ARRAY_BUFFER, colors_vbo);
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    cast_slice_to_u8(colors),
-                    usage,
-                );
-                gl.enable_vertex_attrib_array(2);
-                gl.vertex_attrib_pointer_f32(
-                    2,
-                    4,
-                    glow::FLOAT,
-                    false,
-                    0,
-                    0,
-                );
-            }
+            colors_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(colors_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                cast_slice_to_u8(colors),
+                usage,
+            );
+            gl.enable_vertex_attrib_array(2);
+            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
 
-            if let Some(has_tex) = has_tex {
-                has_tex_vbo = Some(gl.create_buffer().unwrap());
-                gl.bind_buffer(glow::ARRAY_BUFFER, has_tex_vbo);
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    cast_slice_to_u8(has_tex),
-                    usage,
-                );
-                gl.enable_vertex_attrib_array(3);
-                gl.vertex_attrib_pointer_i32(
-                    3,
-                    1,
-                    glow::UNSIGNED_BYTE,
-                    0,
-                    0,
-                );
-            }
+            has_tex_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(has_tex_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                cast_slice_to_u8(has_tex),
+                usage,
+            );
+            gl.enable_vertex_attrib_array(3);
+            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_BYTE, 0, 0);
 
             if let Some(indices) = indices {
                 indices_vbo = Some(gl.create_buffer().unwrap());
@@ -156,9 +129,9 @@ impl VertexBufferGL {
         Self::new(
             gl,
             &vec![0.0; n_vertices * 3],
-            Some(&vec![0.0; n_vertices * 4]),
-            Some(&vec![0.0; n_vertices * 2]),
-            Some(&vec![0; n_vertices]),
+            &vec![0.0; n_vertices * 4],
+            &vec![0.0; n_vertices * 2],
+            &vec![0; n_vertices],
             None,
         )
     }
@@ -166,75 +139,110 @@ impl VertexBufferGL {
     pub fn new_from_cpu(gl: &glow::Context, vb: &VertexBufferCPU) -> Self {
         Self::new(
             gl,
-            &vb.positions,
-            Some(&vb.colors),
-            Some(&vb.texcoords),
-            Some(&vb.has_tex),
-            Some(&vb.indices),
+            vb.get_positions(),
+            vb.get_colors(),
+            vb.get_texcoords(),
+            vb.get_has_tex(),
+            vb.get_indices(),
         )
     }
-
-    // pub fn update_from_mesh(gl: &glow::Context, mesh: &Mesh) -> Self {
-    // }
 
     pub fn bind(&self, gl: &glow::Context) {
         unsafe {
             gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, self.indices_vbo);
-            gl.bind_vertex_array(self.vao);
+            gl.bind_vertex_array(Some(self.vao));
         }
     }
 
-    pub fn set_positions(&mut self, gl: &glow::Context, data: &[f32]) {
+    fn set_from_cpu(&mut self, gl: &glow::Context, vb: &VertexBufferCPU) {
+        self.set_data(
+            gl,
+            vb.get_positions(),
+            vb.get_texcoords(),
+            vb.get_colors(),
+            vb.get_has_tex(),
+            vb.get_indices(),
+        );
+    }
+
+    fn set_from_cpu_slice(
+        &mut self,
+        gl: &glow::Context,
+        vb: &VertexBufferCPU,
+        from_vertex: usize,
+        n_vertices: usize,
+    ) {
+        self.set_data(
+            gl,
+            vb.get_positions_slice(from_vertex, n_vertices),
+            vb.get_texcoords_slice(from_vertex, n_vertices),
+            vb.get_colors_slice(from_vertex, n_vertices),
+            vb.get_has_tex_slice(from_vertex, n_vertices),
+            None,
+        );
+    }
+
+    fn set_data(
+        &mut self,
+        gl: &glow::Context,
+        positions: &[f32],
+        texcoords: &[f32],
+        colors: &[f32],
+        has_tex: &[u8],
+        indices: Option<&[u32]>,
+    ) {
+        self.n_vertices = positions.len() / 3;
+        if texcoords.len() / 2 != self.n_vertices
+            || colors.len() / 4 != self.n_vertices
+            || has_tex.len() != self.n_vertices
+        {
+            panic!("Can't set vertex buffer data with inconsistent number of components in the arrays");
+        }
+
+        self.n_indices = indices.map_or(0, |data| data.len());
+
         unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, self.positions_vbo);
+            if let (Some(vbo), Some(data)) = (self.indices_vbo, indices) {
+                gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(vbo));
+                gl.buffer_sub_data_u8_slice(
+                    glow::ELEMENT_ARRAY_BUFFER,
+                    0,
+                    cast_slice_to_u8(data),
+                );
+            } else if self.indices_vbo.is_none() && indices.is_some() {
+                panic!(
+                    "Can't set indices for the unindexed vertex buffer"
+                );
+            } else if self.indices_vbo.is_some() && indices.is_none() {
+                panic!("Expecting indexes for the indexed vertex buffer");
+            }
+
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.positions_vbo));
             gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(data),
+                cast_slice_to_u8(positions),
             );
-        }
-    }
 
-    pub fn set_texcoords(&mut self, gl: &glow::Context, data: &[f32]) {
-        unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, self.texcoords_vbo);
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.texcoords_vbo));
             gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(data),
+                cast_slice_to_u8(texcoords),
             );
-        }
-    }
 
-    pub fn set_colors(&mut self, gl: &glow::Context, data: &[f32]) {
-        unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, self.colors_vbo);
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.colors_vbo));
             gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(data),
+                cast_slice_to_u8(colors),
             );
-        }
-    }
 
-    pub fn set_has_tex(&mut self, gl: &glow::Context, data: &[u8]) {
-        unsafe {
-            gl.bind_buffer(glow::ARRAY_BUFFER, self.has_tex_vbo);
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.has_tex_vbo));
             gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(data),
-            );
-        }
-    }
-
-    pub fn set_indices(&mut self, gl: &glow::Context, data: &[u32]) {
-        unsafe {
-            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, self.indices_vbo);
-            gl.buffer_sub_data_u8_slice(
-                glow::ELEMENT_ARRAY_BUFFER,
-                0,
-                cast_slice_to_u8(data),
+                cast_slice_to_u8(has_tex),
             );
         }
     }
@@ -428,7 +436,7 @@ impl Texture {
 
 #[derive(Debug, Clone, Copy)]
 struct DrawCall {
-    vertex_buffer_idx: usize,
+    vb_idx: usize,
     start: usize,
     count: usize,
     tex: Option<Texture>,
@@ -454,7 +462,7 @@ pub enum Projection {
 
 impl DrawCall {
     pub fn new(
-        vertex_buffer_idx: usize,
+        vb_idx: usize,
         start: usize,
         tex: Option<Texture>,
         proj: Projection,
@@ -462,7 +470,7 @@ impl DrawCall {
         depth_test: bool,
     ) -> Self {
         Self {
-            vertex_buffer_idx,
+            vb_idx,
             start,
             count: 0,
             tex,
@@ -471,21 +479,12 @@ impl DrawCall {
             depth_test,
         }
     }
-
-    pub fn get_next(&self) -> Self {
-        let mut call = *self;
-        call.vertex_buffer_idx = 0;
-        call.count = 0;
-        call.start = self.start + self.count;
-
-        call
-    }
 }
 
 impl Default for DrawCall {
     fn default() -> Self {
         Self {
-            vertex_buffer_idx: 0,
+            vb_idx: 0,
             start: 0,
             count: 0,
             tex: None,
@@ -502,19 +501,13 @@ pub struct Renderer {
     gl: glow::Context,
     program: Program,
 
-    n_vertex_buffers: usize,
-    vertex_buffers: [VertexBufferGL; MAX_N_VERTEX_BUFFERS],
-
     ms_fbo: Option<glow::NativeFramebuffer>,
 
     postfx_fbo: glow::NativeFramebuffer,
     postfx_tex: Texture,
 
-    positions: [f32; MAX_N_VERTICES * 3],
-    texcoords: [f32; MAX_N_VERTICES * 2],
-    colors: [f32; MAX_N_VERTICES * 4],
-    has_tex: [u8; MAX_N_VERTICES],
-
+    vb_cpu: VertexBufferCPU,
+    vertex_buffers: Vec<VertexBufferGL>,
     draw_calls: Vec<DrawCall>,
 }
 
@@ -579,8 +572,6 @@ impl Renderer {
         let program =
             Program::new_gl(&gl, PRIMITIVE_VERT_SRC, PRIMITIVE_FRAG_SRC);
 
-        let mut vertex_buffers =
-            [VertexBufferGL::default(); MAX_N_VERTEX_BUFFERS];
         let mut ms_fbo = None;
         let postfx_tex;
         let postfx_fbo;
@@ -633,11 +624,6 @@ impl Renderer {
             }
 
             // -----------------------------------------------------------
-            // Default vertex buffer (for draw_call rendering)
-            vertex_buffers[0] =
-                VertexBufferGL::new_empty(&gl, MAX_N_VERTICES);
-
-            // -----------------------------------------------------------
             // Postfx buffer
             postfx_fbo = gl.create_framebuffer().unwrap();
             gl.bind_framebuffer(glow::FRAMEBUFFER, Some(postfx_fbo));
@@ -682,25 +668,22 @@ impl Renderer {
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
         }
 
+        let vertex_buffers =
+            vec![VertexBufferGL::new_empty(&gl, MAX_N_VERTICES)];
+
         Self {
             window,
             window_size,
             gl,
             program,
 
-            n_vertex_buffers: 1,
-            vertex_buffers,
-
             ms_fbo,
 
             postfx_fbo,
             postfx_tex,
 
-            positions: [0.0; MAX_N_VERTICES * 3],
-            texcoords: [0.0; MAX_N_VERTICES * 2],
-            colors: [0.0; MAX_N_VERTICES * 4],
-            has_tex: [0; MAX_N_VERTICES],
-
+            vb_cpu: VertexBufferCPU::new_empty(),
+            vertex_buffers,
             draw_calls: Vec::with_capacity(128),
         }
     }
@@ -789,49 +772,27 @@ impl Renderer {
         )
     }
 
-    pub fn load_vertex_buffer(&mut self, vb: &VertexBufferCPU) -> usize {
+    pub fn load_vertex_buffer_from_cpu(
+        &mut self,
+        vb: &VertexBufferCPU,
+    ) -> usize {
         let vb = VertexBufferGL::new_from_cpu(&self.gl, vb);
+        self.vertex_buffers.push(vb);
 
-        let idx = self.n_vertex_buffers;
-        self.vertex_buffers[idx] = vb;
-        self.n_vertex_buffers += 1;
-
-        idx
+        self.vertex_buffers.len() - 1
     }
 
     fn draw_vertex(
         &mut self,
         position: Point3<f32>,
-        texcoord: Option<Point2<f32>>,
         color: Option<Color>,
+        texcoord: Option<Point2<f32>>,
     ) {
         let draw_call = self.get_default_draw_call();
         let idx = draw_call.start + draw_call.count;
         draw_call.count += 1;
 
-        self.positions[idx * 3 + 0] = position.x;
-        self.positions[idx * 3 + 1] = position.y;
-        self.positions[idx * 3 + 2] = position.z;
-
-        if let Some(color) = color {
-            self.colors[idx * 4 + 0] = color.r;
-            self.colors[idx * 4 + 1] = color.g;
-            self.colors[idx * 4 + 2] = color.b;
-            self.colors[idx * 4 + 3] = color.a;
-        } else {
-            self.colors[idx * 4 + 0] = 0.0;
-            self.colors[idx * 4 + 1] = 0.0;
-            self.colors[idx * 4 + 2] = 0.0;
-            self.colors[idx * 4 + 3] = 0.0;
-        }
-
-        if let Some(texcoord) = texcoord {
-            self.texcoords[idx * 2 + 0] = texcoord.x;
-            self.texcoords[idx * 2 + 1] = texcoord.y;
-            self.has_tex[idx] = 1;
-        } else {
-            self.has_tex[idx] = 0;
-        }
+        self.vb_cpu.push_vertex(position, color, texcoord);
     }
 
     pub fn draw_triangle(
@@ -841,13 +802,13 @@ impl Renderer {
         color: Option<Color>,
     ) {
         if let Some(texcoords) = texcoords {
-            self.draw_vertex(triangle.a, Some(texcoords.a.xy()), color);
-            self.draw_vertex(triangle.b, Some(texcoords.b.xy()), color);
-            self.draw_vertex(triangle.c, Some(texcoords.c.xy()), color);
+            self.draw_vertex(triangle.a, color, Some(texcoords.a.xy()));
+            self.draw_vertex(triangle.b, color, Some(texcoords.b.xy()));
+            self.draw_vertex(triangle.c, color, Some(texcoords.c.xy()));
         } else {
-            self.draw_vertex(triangle.a, None, color);
-            self.draw_vertex(triangle.b, None, color);
-            self.draw_vertex(triangle.c, None, color);
+            self.draw_vertex(triangle.a, color, None);
+            self.draw_vertex(triangle.b, color, None);
+            self.draw_vertex(triangle.c, color, None);
         }
     }
 
@@ -894,7 +855,7 @@ impl Renderer {
         let vb = self.vertex_buffers[vb_idx];
 
         let mut draw_call = self.get_new_draw_call();
-        draw_call.vertex_buffer_idx = vb_idx;
+        draw_call.vb_idx = vb_idx;
         draw_call.count = vb.n_vertices;
     }
 
@@ -932,15 +893,24 @@ impl Renderer {
         if self.draw_calls.len() == 0 {
             self.draw_calls.push(DrawCall::default());
         } else if self.get_curr_draw_call().count != 0 {
-            let next = self.get_curr_draw_call().get_next();
-            self.draw_calls.push(next);
+            let curr = *self.get_curr_draw_call();
+            let new = DrawCall {
+                vb_idx: 0,
+                start: self.vb_cpu.get_n_vertcies(),
+                count: 0,
+                tex: curr.tex,
+                proj: curr.proj,
+                is_font: curr.is_font,
+                depth_test: curr.depth_test,
+            };
+            self.draw_calls.push(new);
         }
 
         self.get_curr_draw_call()
     }
 
     fn get_default_draw_call(&mut self) -> &mut DrawCall {
-        if self.get_curr_draw_call().vertex_buffer_idx != 0 {
+        if self.get_curr_draw_call().vb_idx != 0 {
             return self.get_new_draw_call();
         }
 
@@ -987,7 +957,7 @@ impl Renderer {
                     self.gl.disable(glow::DEPTH_TEST);
                 }
 
-                let vb_idx = draw_call.vertex_buffer_idx;
+                let vb_idx = draw_call.vb_idx;
                 let proj = draw_call.proj;
                 let transform =
                     get_transform_from_proj(proj, self.window_size);
@@ -1007,24 +977,11 @@ impl Renderer {
 
                 // Update default vertex buffer
                 if vb_idx == 0 {
-                    let start = draw_call.start;
-                    let count = draw_call.count;
-                    let vb = &mut self.vertex_buffers[vb_idx];
-                    vb.set_positions(
+                    self.vertex_buffers[0].set_from_cpu_slice(
                         &self.gl,
-                        &self.positions[start * 3..(start + count) * 3],
-                    );
-                    vb.set_texcoords(
-                        &self.gl,
-                        &self.texcoords[start * 2..(start + count) * 2],
-                    );
-                    vb.set_colors(
-                        &self.gl,
-                        &self.colors[start * 4..(start + count) * 4],
-                    );
-                    vb.set_has_tex(
-                        &self.gl,
-                        &self.has_tex[start * 1..(start + count) * 1],
+                        &self.vb_cpu,
+                        draw_call.start,
+                        draw_call.count,
                     );
                 }
 
@@ -1109,6 +1066,7 @@ impl Renderer {
         }
 
         self.draw_calls.clear();
+        self.vb_cpu.clear();
     }
 
     pub fn swap_window(&self) {
