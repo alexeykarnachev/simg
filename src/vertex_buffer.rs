@@ -1,7 +1,7 @@
 use obj::raw::object::Polygon;
 use obj::{load_obj, raw::parse_obj, Obj, Vertex};
 
-pub struct Mesh {
+pub struct VertexBufferCPU {
     pub positions: Vec<f32>,
     pub colors: Vec<f32>,
     pub texcoords: Vec<f32>,
@@ -9,7 +9,7 @@ pub struct Mesh {
     pub indices: Vec<u32>,
 }
 
-impl Mesh {
+impl VertexBufferCPU {
     pub fn from_obj_bytes(bytes: &[u8]) -> Self {
         let obj = parse_obj(bytes).unwrap();
 

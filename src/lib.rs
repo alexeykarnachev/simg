@@ -6,6 +6,6 @@ pub mod emscripten;
 pub mod geometry;
 pub mod glyph_atlas;
 pub mod input;
-pub mod mesh;
 pub mod renderer;
 pub mod shapes;
+pub mod vertex_buffer;

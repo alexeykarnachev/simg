@@ -5,8 +5,8 @@ use crate::camera::*;
 use crate::color::*;
 use crate::common::*;
 use crate::glyph_atlas::*;
-use crate::mesh::Mesh;
 use crate::shapes::*;
+use crate::vertex_buffer::*;
 use image::{
     imageops::flip_vertical_in_place, load_from_memory_with_format,
     DynamicImage, EncodableLayout, ImageFormat,
@@ -163,16 +163,19 @@ impl VertexBufferGL {
         )
     }
 
-    pub fn from_mesh(gl: &glow::Context, mesh: &Mesh) -> Self {
+    pub fn new_from_cpu(gl: &glow::Context, vb: &VertexBufferCPU) -> Self {
         Self::new(
             gl,
-            &mesh.positions,
-            Some(&mesh.colors),
-            Some(&mesh.texcoords),
-            Some(&mesh.has_tex),
-            Some(&mesh.indices),
+            &vb.positions,
+            Some(&vb.colors),
+            Some(&vb.texcoords),
+            Some(&vb.has_tex),
+            Some(&vb.indices),
         )
     }
+
+    // pub fn update_from_mesh(gl: &glow::Context, mesh: &Mesh) -> Self {
+    // }
 
     pub fn bind(&self, gl: &glow::Context) {
         unsafe {
@@ -786,8 +789,8 @@ impl Renderer {
         )
     }
 
-    pub fn load_mesh(&mut self, mesh: &Mesh) -> usize {
-        let vb = VertexBufferGL::from_mesh(&self.gl, mesh);
+    pub fn load_vertex_buffer(&mut self, vb: &VertexBufferCPU) -> usize {
+        let vb = VertexBufferGL::new_from_cpu(&self.gl, vb);
 
         let idx = self.n_vertex_buffers;
         self.vertex_buffers[idx] = vb;
@@ -887,11 +890,11 @@ impl Renderer {
         self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
 
-    pub fn draw_mesh(&mut self, mesh_idx: usize) {
-        let vb = self.vertex_buffers[mesh_idx];
+    pub fn draw_vertex_buffer(&mut self, vb_idx: usize) {
+        let vb = self.vertex_buffers[vb_idx];
 
         let mut draw_call = self.get_new_draw_call();
-        draw_call.vertex_buffer_idx = mesh_idx;
+        draw_call.vertex_buffer_idx = vb_idx;
         draw_call.count = vb.n_vertices;
     }
 
