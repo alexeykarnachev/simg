@@ -1,11 +1,10 @@
 use image::ImageFormat;
-use nalgebra::{point, Point3};
+use nalgebra::Matrix4;
+use nalgebra::{point, vector, Point3};
 use sdl2::mouse::MouseButton;
 use simg::color::*;
 use simg::common::*;
 use simg::input::Input;
-use simg::renderer::Projection;
-use simg::renderer::Projection::*;
 use simg::renderer::Renderer;
 use simg::shapes::*;
 use simg::vertex_buffer::*;
@@ -54,7 +53,7 @@ impl Camera {
 
     pub fn get_proj(&self) -> Projection {
         let q = nalgebra::UnitQuaternion::from_euler_angles(
-            self.pitch.to_radians(),
+            -self.pitch.to_radians(),
             self.yaw.to_radians(),
             0.0,
         );
@@ -101,7 +100,7 @@ impl Game {
         );
 
         let camera =
-            Camera::new(point![0.0, 0.0, 0.0], 45.0, -45.0, 5.0, 60.0);
+            Camera::new(point![0.0, 0.0, 0.0], 45.0, -45.0, 10.0, 60.0);
 
         let vb_gpu = renderer.load_vertex_buffer_from_cpu(
             &VertexBufferCPU::from_obj_bytes(DOG_OBJ),
@@ -161,13 +160,19 @@ impl Game {
         self.renderer.draw_triangle(triangle, None, Some(RED));
 
         let triangle = Triangle::new(
-            point![2.0, 0.0, 0.0],
-            point![2.5, 0.0, 0.0],
-            point![2.0, 2.0, 0.0],
+            point![10.0, 0.0, 0.0],
+            point![10.5, 0.0, 0.0],
+            point![10.0, 2.0, 0.0],
         );
         self.renderer.draw_triangle(triangle, None, Some(GREEN));
 
-        self.renderer.draw_vertex_buffer(self.vb_gpu);
+        let transform = Transformation::new(
+            vector![10.0, self.time.sin() * 8.0, self.time.cos() * 8.0],
+            vector![1.0, 1.0, 1.0],
+            vector![0.0, 0.0, self.time / 2.0],
+        );
+        self.renderer
+            .draw_vertex_buffer(self.vb_gpu, Some(transform));
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();

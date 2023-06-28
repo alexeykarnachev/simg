@@ -434,30 +434,16 @@ impl Texture {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct DrawCall {
     vb_idx: usize,
     start: usize,
     count: usize,
     tex: Option<Texture>,
+    transform: Option<Transformation>,
     proj: Projection,
     is_font: bool,
     depth_test: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Projection {
-    ProjScreen,
-    Proj2D {
-        eye: Point2<f32>,
-        zoom: f32,
-        rotation: f32,
-    },
-    Proj3D {
-        eye: Point3<f32>,
-        target: Point3<f32>,
-        fovy: f32,
-    },
 }
 
 impl DrawCall {
@@ -465,6 +451,7 @@ impl DrawCall {
         vb_idx: usize,
         start: usize,
         tex: Option<Texture>,
+        transform: Option<Transformation>,
         proj: Projection,
         is_font: bool,
         depth_test: bool,
@@ -474,6 +461,7 @@ impl DrawCall {
             start,
             count: 0,
             tex,
+            transform,
             proj,
             is_font,
             depth_test,
@@ -488,6 +476,7 @@ impl Default for DrawCall {
             start: 0,
             count: 0,
             tex: None,
+            transform: None,
             proj: Projection::ProjScreen,
             is_font: false,
             depth_test: true,
@@ -851,12 +840,17 @@ impl Renderer {
         self.draw_rect(glyph.rect, Some(glyph.texcoords), color);
     }
 
-    pub fn draw_vertex_buffer(&mut self, vb_idx: usize) {
+    pub fn draw_vertex_buffer(
+        &mut self,
+        vb_idx: usize,
+        transform: Option<Transformation>,
+    ) {
         let vb = self.vertex_buffers[vb_idx];
 
         let mut draw_call = self.get_new_draw_call();
         draw_call.vb_idx = vb_idx;
         draw_call.count = vb.n_vertices;
+        draw_call.transform = transform;
     }
 
     pub fn set_proj(&mut self, proj: Projection) {
@@ -893,12 +887,13 @@ impl Renderer {
         if self.draw_calls.len() == 0 {
             self.draw_calls.push(DrawCall::default());
         } else if self.get_curr_draw_call().count != 0 {
-            let curr = *self.get_curr_draw_call();
+            let curr = self.get_curr_draw_call().clone();
             let new = DrawCall {
                 vb_idx: 0,
                 start: self.vb_cpu.get_n_vertcies(),
                 count: 0,
                 tex: curr.tex,
+                transform: None,
                 proj: curr.proj,
                 is_font: curr.is_font,
                 depth_test: curr.depth_test,
@@ -958,14 +953,16 @@ impl Renderer {
                 }
 
                 let vb_idx = draw_call.vb_idx;
-                let proj = draw_call.proj;
-                let transform =
-                    get_transform_from_proj(proj, self.window_size);
+                let mut mat = draw_call.proj.get_mat(self.window_size);
+                mat *= draw_call
+                    .transform
+                    .as_ref()
+                    .map_or(Matrix4::identity(), |t| t.get_mat());
 
                 self.program.set_uniform_matrix_4_f32(
                     &self.gl,
                     "u_transform",
-                    transform.as_slice(),
+                    mat.as_slice(),
                 );
 
                 if curr_vb_idx.is_none()
@@ -1165,59 +1162,4 @@ fn blit_framebuffer(
             glow::NEAREST,
         );
     }
-}
-
-fn get_transform_from_proj(
-    proj: Projection,
-    window_size: (u32, u32),
-) -> Matrix4<f32> {
-    use Projection::*;
-
-    let transform = match proj {
-        ProjScreen => Matrix4::new_orthographic(
-            0.0,
-            window_size.0 as f32,
-            0.0,
-            window_size.1 as f32,
-            0.0,
-            1.0,
-        ),
-        Proj2D { eye, zoom, rotation } => {
-            let mut scale = Matrix4::identity();
-            scale[(0, 0)] = zoom;
-            scale[(1, 1)] = zoom;
-
-            let mut translation = Matrix4::identity();
-            translation[(0, 3)] = -eye.x;
-            translation[(1, 3)] = -eye.y;
-
-            let rotation =
-                Matrix4::new_rotation(Vector3::new(0.0, 0.0, -rotation));
-
-            let view = rotation * scale * translation;
-
-            let projection = Matrix4::new_orthographic(
-                window_size.0 as f32 / -2.0,
-                window_size.0 as f32 / 2.0,
-                window_size.1 as f32 / -2.0,
-                window_size.1 as f32 / 2.0,
-                0.0,
-                1.0,
-            );
-
-            projection * view
-        }
-        Proj3D { eye, target, fovy } => {
-            let fovy = fovy.to_radians();
-            let up = Vector3::new(0.0, 1.0, 0.0);
-            let view = Matrix4::look_at_rh(&eye, &target, &up);
-            let aspect = window_size.0 as f32 / window_size.1 as f32;
-            let projection =
-                Matrix4::new_perspective(aspect, fovy, 0.1, 1000.0);
-
-            projection * view
-        }
-    };
-
-    transform
 }

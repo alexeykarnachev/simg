@@ -1,4 +1,4 @@
-use nalgebra::Point2;
+use nalgebra::{vector, Matrix4, Point2, Point3, Vector3};
 
 use crate::color::Color;
 use std::collections::HashMap;
@@ -94,5 +94,110 @@ pub struct Texture {
 impl Texture {
     pub fn new(idx: u32, width: u32, height: u32) -> Self {
         Self { idx, width, height }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Transformation {
+    translation: Vector3<f32>,
+    scale: Vector3<f32>,
+    rotation: Vector3<f32>,
+}
+
+impl Default for Transformation {
+    fn default() -> Self {
+        Self::new(
+            vector![0.0, 0.0, 0.0],
+            vector![1.0, 1.0, 1.0],
+            vector![0.0, 0.0, 0.0],
+        )
+    }
+}
+
+impl Transformation {
+    pub fn new(
+        translation: Vector3<f32>,
+        scale: Vector3<f32>,
+        rotation: Vector3<f32>,
+    ) -> Self {
+        Self { translation, scale, rotation }
+    }
+
+    pub fn get_mat(&self) -> Matrix4<f32> {
+        let t = Matrix4::new_translation(&self.translation);
+        let s = Matrix4::new_nonuniform_scaling(&self.scale);
+        let r = Matrix4::new_rotation(self.rotation);
+
+        t * r * s
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Projection {
+    ProjScreen,
+    Proj2D {
+        eye: Point2<f32>,
+        zoom: f32,
+        rotation: f32,
+    },
+    Proj3D {
+        eye: Point3<f32>,
+        target: Point3<f32>,
+        fovy: f32,
+    },
+}
+
+impl Projection {
+    pub fn get_mat(&self, window_size: (u32, u32)) -> Matrix4<f32> {
+        use Projection::*;
+
+        let mat = match self {
+            ProjScreen => Matrix4::new_orthographic(
+                0.0,
+                window_size.0 as f32,
+                0.0,
+                window_size.1 as f32,
+                0.0,
+                1.0,
+            ),
+            Proj2D { eye, zoom, rotation } => {
+                let mut scale = Matrix4::identity();
+                scale[(0, 0)] = *zoom;
+                scale[(1, 1)] = *zoom;
+
+                let mut translation = Matrix4::identity();
+                translation[(0, 3)] = -eye.x;
+                translation[(1, 3)] = -eye.y;
+
+                let rotation = Matrix4::new_rotation(Vector3::new(
+                    0.0, 0.0, -rotation,
+                ));
+
+                let view = rotation * scale * translation;
+
+                let projection = Matrix4::new_orthographic(
+                    window_size.0 as f32 / -2.0,
+                    window_size.0 as f32 / 2.0,
+                    window_size.1 as f32 / -2.0,
+                    window_size.1 as f32 / 2.0,
+                    0.0,
+                    1.0,
+                );
+
+                projection * view
+            }
+            Proj3D { eye, target, fovy } => {
+                let fovy = fovy.to_radians();
+                let up = Vector3::new(0.0, 1.0, 0.0);
+                let view = Matrix4::look_at_rh(eye, target, &up);
+                let aspect = window_size.0 as f32 / window_size.1 as f32;
+                let projection =
+                    Matrix4::new_perspective(aspect, fovy, 0.1, 1000.0);
+
+                projection * view
+            }
+        };
+
+        mat
     }
 }
