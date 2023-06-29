@@ -1,5 +1,4 @@
 use image::ImageFormat;
-use nalgebra::Matrix4;
 use nalgebra::{point, vector, Point3};
 use sdl2::mouse::MouseButton;
 use simg::color::*;
@@ -166,13 +165,19 @@ impl Game {
         );
         self.renderer.draw_triangle(triangle, None, Some(GREEN));
 
-        let transform = Transformation::new(
-            vector![10.0, self.time.sin() * 8.0, self.time.cos() * 8.0],
-            vector![1.0, 1.0, 1.0],
-            vector![0.0, 0.0, self.time / 2.0],
-        );
-        self.renderer
-            .draw_vertex_buffer(self.vb_gpu, Some(transform));
+        for i in 0..15 {
+            let transform = Transformation::new(
+                vector![
+                    i as f32 * 4.0,
+                    self.time.sin() * 8.0,
+                    self.time.cos() * 8.0
+                ],
+                vector![1.0, 1.0, 1.0],
+                vector![0.0, 0.0, self.time / 2.0],
+            );
+            self.renderer
+                .draw_vertex_buffer(self.vb_gpu, Some(transform));
+        }
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();

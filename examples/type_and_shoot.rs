@@ -4,11 +4,11 @@ use rand::seq::SliceRandom;
 use sdl2::keyboard::Keycode;
 use simg::camera::Camera2D;
 use simg::color::*;
+use simg::common::Projection::*;
 use simg::common::*;
 use simg::geometry::*;
 use simg::glyph_atlas::GlyphAtlas;
 use simg::input::Input;
-use simg::renderer::Projection::*;
 use simg::renderer::Renderer;
 use simg::shapes::*;
 

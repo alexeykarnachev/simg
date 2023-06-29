@@ -7,11 +7,11 @@ use rand::Rng;
 use sdl2::keyboard::Keycode;
 use simg::audio_player::AudioPlayer;
 use simg::color::*;
+use simg::common::Projection::*;
 use simg::common::*;
 use simg::geometry::*;
 use simg::glyph_atlas::*;
 use simg::input::*;
-use simg::renderer::Projection::*;
 use simg::renderer::*;
 use simg::shapes::*;
 
