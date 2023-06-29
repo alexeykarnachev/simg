@@ -1,7 +1,7 @@
 use nalgebra::point;
 use simg::color::*;
 use simg::input::Input;
-use simg::renderer::Projection::*;
+use simg::common::*;
 use simg::renderer::Renderer;
 use simg::shapes::*;
 
@@ -74,11 +74,8 @@ impl Game {
     fn update_game(&mut self) {}
 
     fn update_renderer(&mut self) {
-        self.renderer.set_proj(Proj2D {
-            eye: point![0.0, 0.0],
-            zoom: 1.0,
-            rotation: 0.0,
-        });
+        self.renderer.set_screen_proj();
+        self.renderer.set_origin_2d_camera();
         self.renderer.draw_circle(
             Circle::new(point![0.0, 0.0], 50.0),
             None,
