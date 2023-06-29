@@ -10,7 +10,9 @@ use image::{
     imageops::flip_vertical_in_place, load_from_memory_with_format,
     DynamicImage, EncodableLayout, ImageFormat,
 };
-use nalgebra::{point, Matrix4, Point2, Point3, Vector2, Vector3};
+use nalgebra::{
+    point, Matrix3, Matrix4, Point2, Point3, Vector2, Vector3,
+};
 use std::{collections::HashMap, mem::size_of, num::NonZeroU32};
 
 use glow::{HasContext, NativeTexture};
@@ -27,6 +29,7 @@ const MAX_N_VERTICES: usize = 1 << 15;
 struct VertexBufferGL {
     vao: glow::NativeVertexArray,
     positions_vbo: glow::NativeBuffer,
+    normals_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
     texcoords_vbo: glow::NativeBuffer,
     has_tex_vbo: glow::NativeBuffer,
@@ -40,6 +43,7 @@ impl VertexBufferGL {
     pub fn new(
         gl: &glow::Context,
         positions: &[f32],
+        normals: &[f32],
         colors: &[f32],
         texcoords: &[f32],
         has_tex: &[u8],
@@ -50,6 +54,7 @@ impl VertexBufferGL {
 
         let vao;
         let positions_vbo;
+        let normals_vbo;
         let texcoords_vbo;
         let colors_vbo;
         let has_tex_vbo;
@@ -69,6 +74,16 @@ impl VertexBufferGL {
             gl.enable_vertex_attrib_array(0);
             gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
 
+            normals_vbo = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(normals_vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                cast_slice_to_u8(normals),
+                usage,
+            );
+            gl.enable_vertex_attrib_array(1);
+            gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0);
+
             texcoords_vbo = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(texcoords_vbo));
             gl.buffer_data_u8_slice(
@@ -76,8 +91,8 @@ impl VertexBufferGL {
                 cast_slice_to_u8(texcoords),
                 usage,
             );
-            gl.enable_vertex_attrib_array(1);
-            gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 0, 0);
+            gl.enable_vertex_attrib_array(2);
+            gl.vertex_attrib_pointer_f32(2, 2, glow::FLOAT, false, 0, 0);
 
             colors_vbo = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(colors_vbo));
@@ -86,8 +101,8 @@ impl VertexBufferGL {
                 cast_slice_to_u8(colors),
                 usage,
             );
-            gl.enable_vertex_attrib_array(2);
-            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, 0, 0);
+            gl.enable_vertex_attrib_array(3);
+            gl.vertex_attrib_pointer_f32(3, 4, glow::FLOAT, false, 0, 0);
 
             has_tex_vbo = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(has_tex_vbo));
@@ -96,8 +111,8 @@ impl VertexBufferGL {
                 cast_slice_to_u8(has_tex),
                 usage,
             );
-            gl.enable_vertex_attrib_array(3);
-            gl.vertex_attrib_pointer_i32(3, 1, glow::UNSIGNED_BYTE, 0, 0);
+            gl.enable_vertex_attrib_array(4);
+            gl.vertex_attrib_pointer_i32(4, 1, glow::UNSIGNED_BYTE, 0, 0);
 
             if let Some(indices) = indices {
                 indices_vbo = Some(gl.create_buffer().unwrap());
@@ -114,6 +129,7 @@ impl VertexBufferGL {
         Self {
             vao,
             positions_vbo,
+            normals_vbo,
             colors_vbo,
             texcoords_vbo,
             has_tex_vbo,
@@ -128,6 +144,7 @@ impl VertexBufferGL {
         Self::new(
             gl,
             &vec![0.0; n_vertices * 3],
+            &vec![0.0; n_vertices * 3],
             &vec![0.0; n_vertices * 4],
             &vec![0.0; n_vertices * 2],
             &vec![0; n_vertices],
@@ -139,6 +156,7 @@ impl VertexBufferGL {
         Self::new(
             gl,
             vb.get_positions(),
+            vb.get_normals(),
             vb.get_colors(),
             vb.get_texcoords(),
             vb.get_has_tex(),
@@ -157,6 +175,7 @@ impl VertexBufferGL {
         self.set_data(
             gl,
             vb.get_positions(),
+            vb.get_normals(),
             vb.get_texcoords(),
             vb.get_colors(),
             vb.get_has_tex(),
@@ -174,6 +193,7 @@ impl VertexBufferGL {
         self.set_data(
             gl,
             vb.get_positions_slice(from_vertex, n_vertices),
+            vb.get_normals_slice(from_vertex, n_vertices),
             vb.get_texcoords_slice(from_vertex, n_vertices),
             vb.get_colors_slice(from_vertex, n_vertices),
             vb.get_has_tex_slice(from_vertex, n_vertices),
@@ -185,13 +205,15 @@ impl VertexBufferGL {
         &mut self,
         gl: &glow::Context,
         positions: &[f32],
+        normals: &[f32],
         texcoords: &[f32],
         colors: &[f32],
         has_tex: &[u8],
         indices: Option<&[u32]>,
     ) {
         self.n_vertices = positions.len() / 3;
-        if texcoords.len() / 2 != self.n_vertices
+        if normals.len() / 3 != self.n_vertices
+            || texcoords.len() / 2 != self.n_vertices
             || colors.len() / 4 != self.n_vertices
             || has_tex.len() != self.n_vertices
         {
@@ -221,6 +243,13 @@ impl VertexBufferGL {
                 glow::ARRAY_BUFFER,
                 0,
                 cast_slice_to_u8(positions),
+            );
+
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.normals_vbo));
+            gl.buffer_sub_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                0,
+                cast_slice_to_u8(normals),
             );
 
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.texcoords_vbo));
@@ -361,6 +390,21 @@ impl Program {
     ) {
         unsafe {
             gl.uniform_matrix_4_f32_slice(
+                gl.get_uniform_location(self.to_glow(), name).as_ref(),
+                false,
+                val,
+            );
+        }
+    }
+
+    fn set_uniform_matrix_3_f32(
+        &self,
+        gl: &glow::Context,
+        name: &str,
+        val: &[f32],
+    ) {
+        unsafe {
+            gl.uniform_matrix_3_f32_slice(
                 gl.get_uniform_location(self.to_glow(), name).as_ref(),
                 false,
                 val,
@@ -769,31 +813,46 @@ impl Renderer {
     fn draw_vertex(
         &mut self,
         position: Point3<f32>,
+        normal: Option<Vector3<f32>>,
         color: Option<Color>,
         texcoord: Option<Point2<f32>>,
     ) {
         let draw_call = self.get_default_draw_call();
-        let idx = draw_call.start + draw_call.count;
         draw_call.count += 1;
 
-        self.vb_cpu.push_vertex(position, color, texcoord);
+        self.vb_cpu.push_vertex(position, normal, color, texcoord);
     }
 
     pub fn draw_triangle(
         &mut self,
         triangle: Triangle,
+        normals: Option<Triangle>,
         texcoords: Option<Triangle>,
         color: Option<Color>,
     ) {
-        if let Some(texcoords) = texcoords {
-            self.draw_vertex(triangle.a, color, Some(texcoords.a.xy()));
-            self.draw_vertex(triangle.b, color, Some(texcoords.b.xy()));
-            self.draw_vertex(triangle.c, color, Some(texcoords.c.xy()));
+        let normals = if let Some(normals) = normals {
+            [
+                Some(normals.a.coords),
+                Some(normals.b.coords),
+                Some(normals.c.coords),
+            ]
         } else {
-            self.draw_vertex(triangle.a, color, None);
-            self.draw_vertex(triangle.b, color, None);
-            self.draw_vertex(triangle.c, color, None);
-        }
+            [None; 3]
+        };
+
+        let texcoords = if let Some(texcoords) = texcoords {
+            [
+                Some(texcoords.a.xy()),
+                Some(texcoords.b.xy()),
+                Some(texcoords.c.xy()),
+            ]
+        } else {
+            [None; 3]
+        };
+
+        self.draw_vertex(triangle.a, normals[0], color, texcoords[0]);
+        self.draw_vertex(triangle.b, normals[1], color, texcoords[1]);
+        self.draw_vertex(triangle.c, normals[2], color, texcoords[2]);
     }
 
     pub fn draw_rect(
@@ -809,8 +868,8 @@ impl Renderer {
             [None, None]
         };
 
-        self.draw_triangle(positions[0], texcoords[0], color);
-        self.draw_triangle(positions[1], texcoords[1], color);
+        self.draw_triangle(positions[0], None, texcoords[0], color);
+        self.draw_triangle(positions[1], None, texcoords[1], color);
     }
 
     pub fn draw_circle(
@@ -827,7 +886,7 @@ impl Renderer {
         };
 
         for i in 0..CIRCLE_N_TRIANGLES {
-            self.draw_triangle(positions[i], texcoords[i], color);
+            self.draw_triangle(positions[i], None, texcoords[i], color);
         }
     }
 
@@ -989,12 +1048,22 @@ impl Renderer {
                 } else {
                     panic!("The draw call doesn't have projection. Call `renderer.set_proj` before drawing");
                 };
-                let transform = proj * view * model;
+                let position_mat = proj * view * model;
+                let normal_mat = Matrix3::from_fn(|i, j| model[(i, j)])
+                    .try_inverse()
+                    .unwrap()
+                    .transpose();
 
                 self.program.set_uniform_matrix_4_f32(
                     &self.gl,
-                    "u_transform",
-                    transform.as_slice(),
+                    "u_position_mat",
+                    position_mat.as_slice(),
+                );
+
+                self.program.set_uniform_matrix_3_f32(
+                    &self.gl,
+                    "u_normal_mat",
+                    normal_mat.as_slice(),
                 );
 
                 if curr_vb_idx.is_none()

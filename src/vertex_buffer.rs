@@ -1,12 +1,13 @@
 use crate::color::*;
-use nalgebra::{Point2, Point3};
+use nalgebra::{Point2, Point3, Vector3};
 use obj::raw::object::Polygon;
-use obj::{load_obj, raw::parse_obj, Obj, Vertex};
+use obj::raw::parse_obj;
 
 const INIT_VERT_CAP: usize = 1 << 15;
 
 pub struct VertexBufferCPU {
     positions: Vec<f32>,
+    normals: Vec<f32>,
     colors: Vec<f32>,
     texcoords: Vec<f32>,
     has_tex: Vec<u8>,
@@ -16,6 +17,7 @@ pub struct VertexBufferCPU {
 impl VertexBufferCPU {
     pub fn new(
         positions: Vec<f32>,
+        normals: Vec<f32>,
         colors: Vec<f32>,
         texcoords: Vec<f32>,
         has_tex: Vec<u8>,
@@ -23,6 +25,7 @@ impl VertexBufferCPU {
     ) -> Self {
         Self {
             positions,
+            normals,
             colors,
             texcoords,
             has_tex,
@@ -32,6 +35,7 @@ impl VertexBufferCPU {
 
     pub fn new_empty() -> Self {
         Self::new(
+            Vec::with_capacity(INIT_VERT_CAP * 3),
             Vec::with_capacity(INIT_VERT_CAP * 3),
             Vec::with_capacity(INIT_VERT_CAP * 4),
             Vec::with_capacity(INIT_VERT_CAP * 2),
@@ -44,7 +48,7 @@ impl VertexBufferCPU {
         let obj = parse_obj(bytes).unwrap();
 
         let mut positions = vec![];
-        let mut indices = vec![];
+        let mut normals = vec![];
         let mut texcoords = vec![];
 
         use Polygon::*;
@@ -60,30 +64,18 @@ impl VertexBufferCPU {
                     println!("c")
                 }
                 PTN(ptn) => {
-                    let v0 = ptn[0];
-                    let v1 = ptn[1];
-                    let v2 = ptn[2];
+                    for v in ptn.iter() {
+                        positions.push(obj.positions[v.0].0);
+                        positions.push(obj.positions[v.0].1);
+                        positions.push(obj.positions[v.0].2);
 
-                    indices.push(indices.len() as u32);
-                    indices.push(indices.len() as u32);
-                    indices.push(indices.len() as u32);
+                        normals.push(obj.normals[v.2].0);
+                        normals.push(obj.normals[v.2].1);
+                        normals.push(obj.normals[v.2].2);
 
-                    positions.push(obj.positions[v0.0].0);
-                    positions.push(obj.positions[v0.0].1);
-                    positions.push(obj.positions[v0.0].2);
-                    positions.push(obj.positions[v1.0].0);
-                    positions.push(obj.positions[v1.0].1);
-                    positions.push(obj.positions[v1.0].2);
-                    positions.push(obj.positions[v2.0].0);
-                    positions.push(obj.positions[v2.0].1);
-                    positions.push(obj.positions[v2.0].2);
-
-                    texcoords.push(obj.tex_coords[v0.1].0);
-                    texcoords.push(obj.tex_coords[v0.1].1);
-                    texcoords.push(obj.tex_coords[v1.1].0);
-                    texcoords.push(obj.tex_coords[v1.1].1);
-                    texcoords.push(obj.tex_coords[v2.1].0);
-                    texcoords.push(obj.tex_coords[v2.1].1);
+                        texcoords.push(obj.tex_coords[v.1].0);
+                        texcoords.push(obj.tex_coords[v.1].1);
+                    }
                 }
             }
         }
@@ -92,12 +84,13 @@ impl VertexBufferCPU {
         let colors = vec![1.0; n_vertices * 4];
         let has_tex = vec![1; n_vertices];
 
-        Self::new(positions, colors, texcoords, has_tex, Some(indices))
+        Self::new(positions, normals, colors, texcoords, has_tex, None)
     }
 
     pub fn push_vertex(
         &mut self,
         position: Point3<f32>,
+        normal: Option<Vector3<f32>>,
         color: Option<Color>,
         texcoord: Option<Point2<f32>>,
     ) {
@@ -106,6 +99,11 @@ impl VertexBufferCPU {
         }
 
         self.positions.extend_from_slice(position.coords.as_ref());
+        if let Some(normal) = normal {
+            self.normals.extend_from_slice(normal.as_ref());
+        } else {
+            self.normals.extend_from_slice(&[0.0; 3]);
+        }
         self.colors
             .extend_from_slice(&color.unwrap_or(ZEROS).as_arr());
 
@@ -120,6 +118,10 @@ impl VertexBufferCPU {
 
     pub fn get_positions(&self) -> &[f32] {
         &self.positions
+    }
+
+    pub fn get_normals(&self) -> &[f32] {
+        &self.normals
     }
 
     pub fn get_colors(&self) -> &[f32] {
@@ -144,6 +146,14 @@ impl VertexBufferCPU {
         n_vertices: usize,
     ) -> &[f32] {
         &self.positions[from_vertex * 3..(from_vertex + n_vertices) * 3]
+    }
+
+    pub fn get_normals_slice(
+        &self,
+        from_vertex: usize,
+        n_vertices: usize,
+    ) -> &[f32] {
+        &self.normals[from_vertex * 3..(from_vertex + n_vertices) * 3]
     }
 
     pub fn get_colors_slice(
@@ -176,6 +186,17 @@ impl VertexBufferCPU {
 
     pub fn get_n_indices(&self) -> usize {
         self.indices.as_ref().map_or(0, |data| data.len())
+    }
+
+    pub fn set_has_tex(&mut self, has_tex: bool) {
+        self.has_tex.fill(has_tex as u8);
+    }
+
+    pub fn set_color(&mut self, color: Color) {
+        let color = color.as_arr();
+        for i in 0..self.colors.len() {
+            self.colors[i] = color[i % 4];
+        }
     }
 
     pub fn clear(&mut self) {

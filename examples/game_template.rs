@@ -1,7 +1,7 @@
 use nalgebra::point;
 use simg::color::*;
-use simg::input::Input;
 use simg::common::*;
+use simg::input::Input;
 use simg::renderer::Renderer;
 use simg::shapes::*;
 

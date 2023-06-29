@@ -1,6 +1,7 @@
 const uint UTRUE = uint(1);
 
 in vec4 vs_color;
+in vec3 vs_normal;
 in vec2 vs_texcoord;
 flat in uint vs_has_tex;
 
@@ -23,9 +24,12 @@ void main() {
         }
     }
 
-    // color.r = vs_texcoord.x;
-    // color.g = vs_texcoord.y;
-    // color.b = 0.0;
+    if (length(vs_normal) > 0.01) {
+        float k = dot(normalize(vs_normal), -vec3(1.0, 0.0, 0.0));
+        k = max(0.0, k);
+        color = vec4(color.rgb * k, color.a);
+    }
+
     fs_color = color;
 }
 

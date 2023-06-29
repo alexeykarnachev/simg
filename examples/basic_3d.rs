@@ -163,6 +163,7 @@ impl Game {
 
     fn update_renderer(&mut self) {
         let aspect = self.renderer.get_window_aspect();
+        self.renderer.set_depth_test(true);
         self.renderer.set_proj(self.camera.get_proj(aspect));
         self.renderer.set_camera(self.camera.get_camera());
         self.renderer.set_tex(self.tex, false);
@@ -172,21 +173,22 @@ impl Game {
             point![0.5, 0.0, 0.0],
             point![0.0, 2.0, 0.0],
         );
-        self.renderer.draw_triangle(triangle, None, Some(RED));
+        self.renderer.draw_triangle(triangle, None, None, Some(RED));
 
         let triangle = Triangle::new(
             point![10.0, 0.0, 0.0],
             point![10.5, 0.0, 0.0],
             point![10.0, 2.0, 0.0],
         );
-        self.renderer.draw_triangle(triangle, None, Some(GREEN));
+        self.renderer
+            .draw_triangle(triangle, None, None, Some(GREEN));
 
         for i in 0..15 {
             let transform = Transformation::new(
                 vector![
                     i as f32 * 4.0,
-                    self.time.sin() * 8.0,
-                    self.time.cos() * 8.0
+                    self.time.sin() * 3.0,
+                    self.time.cos() * 3.0
                 ],
                 vector![1.0, 1.0, 1.0],
                 vector![0.0, 0.0, self.time / 2.0],
