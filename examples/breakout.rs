@@ -497,10 +497,11 @@ impl Game {
     }
 
     fn update_renderer(&mut self) {
+        self.renderer.set_screen_proj();
+        self.renderer.set_screen_camera();
         self.renderer.set_depth_test(false);
 
         // Draw objects and playing filed (w/o texture)
-        self.renderer.set_proj(ProjScreen);
         self.renderer.draw_rect(self.frame, None, Some(WHITE));
         self.renderer.draw_rect(self.field, None, Some(BLACK));
         self.renderer.draw_rect(self.paddle.rect, None, Some(WHITE));

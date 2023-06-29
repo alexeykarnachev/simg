@@ -18,7 +18,7 @@ const WINDOW_HEIGHT: f32 = 600.0;
 const DOG_OBJ: &[u8] = include_bytes!("./assets/basic_3d/dog/dog.obj");
 const DOG_TEX: &[u8] = include_bytes!("./assets/basic_3d/dog/color.png");
 
-struct Camera {
+struct ArcballCamera {
     pub target: Point3<f32>,
     pub pitch: f32,
     pub yaw: f32,
@@ -26,7 +26,7 @@ struct Camera {
     pub fovy: f32,
 }
 
-impl Camera {
+impl ArcballCamera {
     pub fn new(
         target: Point3<f32>,
         pitch: f32,
@@ -50,7 +50,7 @@ impl Camera {
         self.distance -= input.mouse_wheel as f32;
     }
 
-    pub fn get_proj(&self) -> Projection {
+    pub fn get_camera(&self) -> Camera {
         let q = nalgebra::UnitQuaternion::from_euler_angles(
             -self.pitch.to_radians(),
             self.yaw.to_radians(),
@@ -59,11 +59,20 @@ impl Camera {
         let eye = point![0.0, 0.0, self.distance];
         let eye = (q * (eye - self.target)) + self.target.coords;
 
-        Projection::Proj3D {
-            eye: eye.into(),
-            target: self.target,
-            fovy: self.fovy,
-        }
+        Camera::new_3d(
+            Point3::from(eye),
+            self.target,
+            vector![0.0, 1.0, 0.0],
+        )
+    }
+
+    pub fn get_proj(&self, aspect: f32) -> Projection {
+        Projection::new_perspective(
+            aspect,
+            self.fovy.to_radians(),
+            0.1,
+            1000.0,
+        )
     }
 }
 
@@ -79,7 +88,7 @@ struct Game {
 
     renderer: Renderer,
 
-    camera: Camera,
+    camera: ArcballCamera,
 
     vb_gpu: usize,
     tex: Texture,
@@ -98,8 +107,13 @@ impl Game {
             MSAA,
         );
 
-        let camera =
-            Camera::new(point![0.0, 0.0, 0.0], 45.0, -45.0, 10.0, 60.0);
+        let camera = ArcballCamera::new(
+            point![0.0, 0.0, 0.0],
+            45.0,
+            -45.0,
+            10.0,
+            60.0,
+        );
 
         let vb_gpu = renderer.load_vertex_buffer_from_cpu(
             &VertexBufferCPU::from_obj_bytes(DOG_OBJ),
@@ -148,7 +162,9 @@ impl Game {
     }
 
     fn update_renderer(&mut self) {
-        self.renderer.set_proj(self.camera.get_proj());
+        let aspect = self.renderer.get_window_aspect();
+        self.renderer.set_proj(self.camera.get_proj(aspect));
+        self.renderer.set_camera(self.camera.get_camera());
         self.renderer.set_tex(self.tex, false);
 
         let triangle = Triangle::new(

@@ -2,7 +2,6 @@ use core::f32::consts::PI;
 use nalgebra::{point, vector, Point2, Vector2};
 use rand::seq::SliceRandom;
 use sdl2::keyboard::Keycode;
-use simg::camera::Camera2D;
 use simg::color::*;
 use simg::common::Projection::*;
 use simg::common::*;
@@ -637,11 +636,8 @@ impl Game {
     fn draw_scene(&mut self) {
         // ---------------------------------------------------------------
         // Draw player, bullets, enemies
-        self.renderer.set_proj(Proj2D {
-            eye: self.camera.position,
-            zoom: self.camera.zoom,
-            rotation: self.camera.rotation,
-        });
+        self.renderer.set_screen_proj();
+        self.renderer.set_origin_2d_camera();
 
         self.renderer.draw_circle(
             self.player.circle,
@@ -692,8 +688,7 @@ impl Game {
 
         // ---------------------------------------------------------------
         // Draw frame
-        self.renderer.set_proj(ProjScreen);
-
+        self.renderer.set_screen_camera();
         let atlas = &self.glyph_atlas_small;
         let top_frame = self.get_top_frame_rect();
         let bot_frame = self.get_bot_frame_rect();
@@ -784,7 +779,7 @@ impl Game {
     }
 
     fn draw_starting_level_state(&mut self) {
-        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_screen_camera();
         self.renderer.set_tex(self.glyph_tex_small, true);
         self.draw_screen_dim();
 
@@ -802,7 +797,7 @@ impl Game {
     }
 
     fn draw_playing_state(&mut self) {
-        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_screen_camera();
         self.renderer.set_tex(self.glyph_tex_small, true);
 
         // ---------------------------------------------------------------
@@ -819,7 +814,7 @@ impl Game {
     }
 
     fn draw_pause_state(&mut self) {
-        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_screen_camera();
         self.renderer.set_tex(self.glyph_tex_small, true);
 
         self.draw_screen_dim();
@@ -838,7 +833,7 @@ impl Game {
     }
 
     fn draw_loss_state(&mut self) {
-        self.renderer.set_proj(ProjScreen);
+        self.renderer.set_screen_camera();
         self.renderer.set_tex(self.glyph_tex_small, true);
 
         self.draw_screen_dim();

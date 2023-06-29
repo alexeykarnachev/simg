@@ -1,4 +1,4 @@
-use nalgebra::{vector, Matrix4, Point2, Point3, Vector3};
+use nalgebra::{point, vector, Matrix4, Point2, Point3, Vector3};
 
 use crate::color::Color;
 use std::collections::HashMap;
@@ -132,72 +132,159 @@ impl Transformation {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Projection {
-    ProjScreen,
-    Proj2D {
-        eye: Point2<f32>,
-        zoom: f32,
+#[derive(Clone, Copy)]
+pub struct Camera2D {
+    pub position: Point2<f32>,
+    pub rotation: f32,
+    pub zoom: f32,
+}
+
+impl Default for Camera2D {
+    fn default() -> Self {
+        Self::new(Point2::origin())
+    }
+}
+
+impl Camera2D {
+    pub fn new(position: Point2<f32>) -> Self {
+        Self { position, rotation: 0.0, zoom: 1.0 }
+    }
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Camera {
+    Cam2D {
+        position: Point2<f32>,
         rotation: f32,
     },
-    Proj3D {
-        eye: Point3<f32>,
+    Cam3D {
+        position: Point3<f32>,
         target: Point3<f32>,
-        fovy: f32,
+        up: Vector3<f32>,
     },
 }
 
-impl Projection {
-    pub fn get_mat(&self, window_size: (u32, u32)) -> Matrix4<f32> {
-        use Projection::*;
+impl Camera {
+    pub fn new_2d(position: Point2<f32>, rotation: f32) -> Self {
+        Self::Cam2D { position, rotation }
+    }
 
-        let mat = match self {
-            ProjScreen => Matrix4::new_orthographic(
-                0.0,
-                window_size.0 as f32,
-                0.0,
-                window_size.1 as f32,
-                0.0,
-                1.0,
-            ),
-            Proj2D { eye, zoom, rotation } => {
-                let mut scale = Matrix4::identity();
-                scale[(0, 0)] = *zoom;
-                scale[(1, 1)] = *zoom;
+    pub fn new_3d(
+        position: Point3<f32>,
+        target: Point3<f32>,
+        up: Vector3<f32>,
+    ) -> Self {
+        Self::Cam3D { position, target, up }
+    }
 
+    pub fn new_screen(window_size: (u32, u32)) -> Self {
+        Camera::Cam2D {
+            position: point![
+                window_size.0 as f32 / 2.0,
+                window_size.1 as f32 / 2.0
+            ],
+            rotation: 0.0,
+        }
+    }
+
+    pub fn new_origin_2d() -> Self {
+        Camera::Cam2D {
+            position: point![0.0, 0.0],
+            rotation: 0.0,
+        }
+    }
+
+    pub fn get_mat(&self) -> Matrix4<f32> {
+        use Camera::*;
+
+        match self {
+            Cam2D { position, rotation } => {
                 let mut translation = Matrix4::identity();
-                translation[(0, 3)] = -eye.x;
-                translation[(1, 3)] = -eye.y;
+                translation[(0, 3)] = -position.x;
+                translation[(1, 3)] = -position.y;
 
                 let rotation = Matrix4::new_rotation(Vector3::new(
                     0.0, 0.0, -rotation,
                 ));
 
-                let view = rotation * scale * translation;
-
-                let projection = Matrix4::new_orthographic(
-                    window_size.0 as f32 / -2.0,
-                    window_size.0 as f32 / 2.0,
-                    window_size.1 as f32 / -2.0,
-                    window_size.1 as f32 / 2.0,
-                    0.0,
-                    1.0,
-                );
-
-                projection * view
+                rotation * translation
             }
-            Proj3D { eye, target, fovy } => {
-                let fovy = fovy.to_radians();
-                let up = Vector3::new(0.0, 1.0, 0.0);
-                let view = Matrix4::look_at_rh(eye, target, &up);
-                let aspect = window_size.0 as f32 / window_size.1 as f32;
-                let projection =
-                    Matrix4::new_perspective(aspect, fovy, 0.1, 1000.0);
-
-                projection * view
+            Cam3D { position, target, up } => {
+                Matrix4::look_at_rh(position, target, up)
             }
-        };
+        }
+    }
+}
 
-        mat
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Projection {
+    Orthographic {
+        view_width: f32,
+        view_height: f32,
+        znear: f32,
+        zfar: f32,
+    },
+    Perspective {
+        aspect: f32,
+        fovy: f32,
+        znear: f32,
+        zfar: f32,
+    },
+}
+
+impl Projection {
+    pub fn new_orthographic(
+        view_width: f32,
+        view_height: f32,
+        znear: f32,
+        zfar: f32,
+    ) -> Self {
+        Self::Orthographic { view_width, view_height, znear, zfar }
+    }
+
+    pub fn new_perspective(
+        aspect: f32,
+        fovy: f32,
+        znear: f32,
+        zfar: f32,
+    ) -> Self {
+        Self::Perspective { aspect, fovy, znear, zfar }
+    }
+
+    pub fn new_screen(window_size: (u32, u32)) -> Self {
+        Projection::Orthographic {
+            view_width: window_size.0 as f32,
+            view_height: window_size.1 as f32,
+            znear: 0.0,
+            zfar: 1.0,
+        }
+    }
+
+    pub fn new_2d(view_width: f32, view_height: f32) -> Self {
+        Projection::Orthographic {
+            view_width,
+            view_height,
+            znear: 0.0,
+            zfar: 1.0,
+        }
+    }
+
+    pub fn get_mat(&self) -> Matrix4<f32> {
+        use Projection::*;
+        match self {
+            Orthographic { view_width, view_height, znear, zfar } => {
+                Matrix4::new_orthographic(
+                    view_width / -2.0,
+                    view_width / 2.0,
+                    view_height / -2.0,
+                    view_height / 2.0,
+                    *znear,
+                    *zfar,
+                )
+            }
+            Perspective { aspect, fovy, znear, zfar } => {
+                Matrix4::new_perspective(*aspect, *fovy, *znear, *zfar)
+            }
+        }
     }
 }

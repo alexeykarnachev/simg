@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use crate::camera::*;
 use crate::color::*;
 use crate::common::*;
 use crate::glyph_atlas::*;
@@ -434,14 +433,15 @@ impl Texture {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct DrawCall {
     vb_idx: usize,
     start: usize,
     count: usize,
     tex: Option<Texture>,
     transform: Option<Transformation>,
-    proj: Projection,
+    camera: Option<Camera>,
+    proj: Option<Projection>,
     is_font: bool,
     depth_test: bool,
 }
@@ -452,7 +452,8 @@ impl DrawCall {
         start: usize,
         tex: Option<Texture>,
         transform: Option<Transformation>,
-        proj: Projection,
+        camera: Option<Camera>,
+        proj: Option<Projection>,
         is_font: bool,
         depth_test: bool,
     ) -> Self {
@@ -462,6 +463,7 @@ impl DrawCall {
             count: 0,
             tex,
             transform,
+            camera,
             proj,
             is_font,
             depth_test,
@@ -469,24 +471,8 @@ impl DrawCall {
     }
 }
 
-impl Default for DrawCall {
-    fn default() -> Self {
-        Self {
-            vb_idx: 0,
-            start: 0,
-            count: 0,
-            tex: None,
-            transform: None,
-            proj: Projection::ProjScreen,
-            is_font: false,
-            depth_test: true,
-        }
-    }
-}
-
 pub struct Renderer {
     window: sdl2::video::Window,
-    window_size: (u32, u32),
     gl: glow::Context,
     program: Program,
 
@@ -662,7 +648,6 @@ impl Renderer {
 
         Self {
             window,
-            window_size,
             gl,
             program,
 
@@ -675,6 +660,16 @@ impl Renderer {
             vertex_buffers,
             draw_calls: Vec::with_capacity(128),
         }
+    }
+
+    pub fn get_window_size(&self) -> (u32, u32) {
+        self.window.size()
+    }
+
+    pub fn get_window_aspect(&self) -> f32 {
+        let (w, h) = self.get_window_size();
+
+        w as f32 / h as f32
     }
 
     pub fn load_program(
@@ -854,9 +849,33 @@ impl Renderer {
     }
 
     pub fn set_proj(&mut self, proj: Projection) {
-        if self.get_curr_draw_call().proj != proj {
-            self.get_new_draw_call().proj = proj;
+        let curr_proj = self.get_curr_draw_call().proj;
+        if curr_proj.is_none() || curr_proj.is_some_and(|p| p != proj) {
+            let draw_call = self.get_new_draw_call();
+            draw_call.proj = Some(proj);
         }
+    }
+
+    pub fn set_screen_proj(&mut self) {
+        self.set_proj(Projection::new_screen(self.get_window_size()));
+    }
+
+    pub fn set_camera(&mut self, camera: Camera) {
+        let curr_camera = self.get_curr_draw_call().camera;
+        if curr_camera.is_none()
+            || curr_camera.is_some_and(|p| p != camera)
+        {
+            let draw_call = self.get_new_draw_call();
+            draw_call.camera = Some(camera);
+        }
+    }
+
+    pub fn set_screen_camera(&mut self) {
+        self.set_camera(Camera::new_screen(self.get_window_size()));
+    }
+
+    pub fn set_origin_2d_camera(&mut self) {
+        self.set_camera(Camera::new_origin_2d());
     }
 
     pub fn set_depth_test(&mut self, is_set: bool) {
@@ -894,6 +913,7 @@ impl Renderer {
                 count: 0,
                 tex: curr.tex,
                 transform: None,
+                camera: curr.camera,
                 proj: curr.proj,
                 is_font: curr.is_font,
                 depth_test: curr.depth_test,
@@ -917,9 +937,10 @@ impl Renderer {
         clear_color: Color,
         postfx_program: Option<&Program>,
     ) {
+        let window_size = self.get_window_size();
         let screen_rect = Rectangle::new(
             point![0.0, 0.0],
-            point![self.window_size.0 as f32, self.window_size.1 as f32],
+            point![window_size.0 as f32, window_size.1 as f32],
         );
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
@@ -953,16 +974,27 @@ impl Renderer {
                 }
 
                 let vb_idx = draw_call.vb_idx;
-                let mut mat = draw_call.proj.get_mat(self.window_size);
-                mat *= draw_call
+                let model = draw_call
                     .transform
                     .as_ref()
                     .map_or(Matrix4::identity(), |t| t.get_mat());
+                let view = if let Some(camera) = draw_call.camera.as_ref()
+                {
+                    camera.get_mat()
+                } else {
+                    panic!("The draw call doesn't have camera. Call `renderer.set_camera` before drawing");
+                };
+                let proj = if let Some(proj) = draw_call.proj.as_ref() {
+                    proj.get_mat()
+                } else {
+                    panic!("The draw call doesn't have projection. Call `renderer.set_proj` before drawing");
+                };
+                let transform = proj * view * model;
 
                 self.program.set_uniform_matrix_4_f32(
                     &self.gl,
                     "u_transform",
-                    mat.as_slice(),
+                    transform.as_slice(),
                 );
 
                 if curr_vb_idx.is_none()
