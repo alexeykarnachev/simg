@@ -1,28 +1,18 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 use crate::color::*;
 use crate::common::*;
 use crate::glyph_atlas::*;
 use crate::shapes::*;
 use crate::vertex_buffer::*;
-use image::{
-    imageops::flip_vertical_in_place, load_from_memory_with_format,
-    DynamicImage, EncodableLayout, ImageFormat,
-};
-use nalgebra::{
-    point, Matrix3, Matrix4, Point2, Point3, Vector2, Vector3,
-};
-use std::{collections::HashMap, mem::size_of, num::NonZeroU32};
+use image::{load_from_memory_with_format, EncodableLayout, ImageFormat};
+use nalgebra::{point, Matrix3, Matrix4, Point2, Point3, Vector3};
+use std::num::NonZeroU32;
 
-use glow::{HasContext, NativeTexture};
+use glow::HasContext;
 
 const PRIMITIVE_VERT_SRC: &str = include_str!("../shaders/primitive.vert");
 const PRIMITIVE_FRAG_SRC: &str = include_str!("../shaders/primitive.frag");
 const SCREEN_RECT_VERT_SRC: &str =
     include_str!("../shaders/screen_rect.vert");
-const MAX_N_PROGRAMS: usize = 16;
-const MAX_N_TEXTURES: usize = 16;
 const MAX_N_VERTICES: usize = 1 << 15;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -501,7 +491,6 @@ impl Renderer {
         let gl_attr = video.gl_attr();
         gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
         gl_attr.set_context_version(4, 6);
-        // gl_attr.set_multisample_samples(N_MULTISAMPLES);
 
         let gl_profile;
         let gl_major_version;
