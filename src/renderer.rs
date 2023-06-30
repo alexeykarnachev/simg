@@ -59,72 +59,21 @@ impl VertexBufferGL {
         let colors_vbo;
         let has_tex_vbo;
         let mut indices_vbo = None;
-        let usage = glow::DYNAMIC_DRAW;
         unsafe {
             vao = gl.create_vertex_array().unwrap();
             gl.bind_vertex_array(Some(vao));
+        }
 
-            positions_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(positions_vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                cast_slice_to_u8(positions),
-                usage,
-            );
-            gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 0, 0);
+        positions_vbo = create_attrib_vbo(gl, 0, 3, positions);
+        normals_vbo = create_attrib_vbo(gl, 1, 3, normals);
+        texcoords_vbo = create_attrib_vbo(gl, 2, 2, texcoords);
+        colors_vbo = create_attrib_vbo(gl, 3, 4, colors);
+        has_tex_vbo = create_attrib_vbo(gl, 4, 1, has_tex);
 
-            normals_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(normals_vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                cast_slice_to_u8(normals),
-                usage,
-            );
-            gl.enable_vertex_attrib_array(1);
-            gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, 0, 0);
-
-            texcoords_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(texcoords_vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                cast_slice_to_u8(texcoords),
-                usage,
-            );
-            gl.enable_vertex_attrib_array(2);
-            gl.vertex_attrib_pointer_f32(2, 2, glow::FLOAT, false, 0, 0);
-
-            colors_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(colors_vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                cast_slice_to_u8(colors),
-                usage,
-            );
-            gl.enable_vertex_attrib_array(3);
-            gl.vertex_attrib_pointer_f32(3, 4, glow::FLOAT, false, 0, 0);
-
-            has_tex_vbo = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(has_tex_vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                cast_slice_to_u8(has_tex),
-                usage,
-            );
-            gl.enable_vertex_attrib_array(4);
-            gl.vertex_attrib_pointer_i32(4, 1, glow::UNSIGNED_BYTE, 0, 0);
-
-            if let Some(indices) = indices {
-                indices_vbo = Some(gl.create_buffer().unwrap());
-                gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, indices_vbo);
-                gl.buffer_data_u8_slice(
-                    glow::ELEMENT_ARRAY_BUFFER,
-                    cast_slice_to_u8(indices),
-                    usage,
-                );
-                n_indices = indices.len();
-            }
-        };
+        if let Some(indices) = indices {
+            indices_vbo = Some(create_indices_vbo(gl, indices));
+            n_indices = indices.len();
+        }
 
         Self {
             vao,
@@ -1178,6 +1127,68 @@ fn cast_slice_to_u8<T>(slice: &[T]) -> &[u8] {
             slice.as_ptr() as *const u8,
             slice.len() * core::mem::size_of::<T>(),
         )
+    }
+}
+
+fn create_attrib_vbo<T>(
+    gl: &glow::Context,
+    index: u32,
+    size: i32,
+    data: &[T],
+) -> glow::NativeBuffer {
+    unsafe {
+        let vbo = gl.create_buffer().unwrap();
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+        gl.buffer_data_u8_slice(
+            glow::ARRAY_BUFFER,
+            cast_slice_to_u8(data),
+            glow::DYNAMIC_DRAW,
+        );
+        gl.enable_vertex_attrib_array(index);
+
+        let type_name = std::any::type_name::<T>();
+        if type_name == std::any::type_name::<f32>() {
+            gl.vertex_attrib_pointer_f32(
+                index,
+                size,
+                glow::FLOAT,
+                false,
+                0,
+                0,
+            );
+        } else if type_name == std::any::type_name::<u8>() {
+            gl.vertex_attrib_pointer_i32(
+                index,
+                size,
+                glow::UNSIGNED_BYTE,
+                0,
+                0,
+            );
+        } else {
+            panic!(
+                "Can't create attribute vbo with data of type: {}",
+                type_name
+            );
+        }
+
+        vbo
+    }
+}
+
+fn create_indices_vbo(
+    gl: &glow::Context,
+    data: &[u32],
+) -> glow::NativeBuffer {
+    unsafe {
+        let vbo = gl.create_buffer().unwrap();
+        gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(vbo));
+        gl.buffer_data_u8_slice(
+            glow::ELEMENT_ARRAY_BUFFER,
+            cast_slice_to_u8(data),
+            glow::STATIC_DRAW,
+        );
+
+        vbo
     }
 }
 
