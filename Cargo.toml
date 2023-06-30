@@ -12,6 +12,7 @@ fontdue = "0.7.3"
 obj-rs = "0.7"
 nalgebra = "0.32.2"
 rand = "0.8.5"
+enum-iterator = "1.4.1"
 
 [build-dependencies]
 gl_generator = "0.14.0"

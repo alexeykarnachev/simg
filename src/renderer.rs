@@ -3,6 +3,8 @@ use crate::common::*;
 use crate::glyph_atlas::*;
 use crate::shapes::*;
 use crate::vertex_buffer::*;
+use core::fmt::Debug;
+use enum_iterator::{all, Sequence};
 use image::{load_from_memory_with_format, EncodableLayout, ImageFormat};
 use nalgebra::{point, Matrix3, Matrix4, Point2, Point3, Vector3};
 use std::num::NonZeroU32;
@@ -22,7 +24,7 @@ struct VertexBufferGL {
     normals_vbo: glow::NativeBuffer,
     colors_vbo: glow::NativeBuffer,
     texcoords_vbo: glow::NativeBuffer,
-    has_tex_vbo: glow::NativeBuffer,
+    flags_vbo: glow::NativeBuffer,
     indices_vbo: Option<glow::NativeBuffer>,
 
     n_vertices: usize,
@@ -36,7 +38,7 @@ impl VertexBufferGL {
         normals: &[f32],
         colors: &[f32],
         texcoords: &[f32],
-        has_tex: &[u8],
+        flags: &[u8],
         indices: Option<&[u32]>,
     ) -> Self {
         let n_vertices = positions.len() / 3;
@@ -47,7 +49,7 @@ impl VertexBufferGL {
         let normals_vbo;
         let texcoords_vbo;
         let colors_vbo;
-        let has_tex_vbo;
+        let flags_vbo;
         let mut indices_vbo = None;
         unsafe {
             vao = gl.create_vertex_array().unwrap();
@@ -58,7 +60,7 @@ impl VertexBufferGL {
         normals_vbo = create_attrib_vbo(gl, 1, 3, normals);
         texcoords_vbo = create_attrib_vbo(gl, 2, 2, texcoords);
         colors_vbo = create_attrib_vbo(gl, 3, 4, colors);
-        has_tex_vbo = create_attrib_vbo(gl, 4, 1, has_tex);
+        flags_vbo = create_attrib_vbo(gl, 4, 1, flags);
 
         if let Some(indices) = indices {
             indices_vbo = Some(create_indices_vbo(gl, indices));
@@ -71,7 +73,7 @@ impl VertexBufferGL {
             normals_vbo,
             colors_vbo,
             texcoords_vbo,
-            has_tex_vbo,
+            flags_vbo,
             indices_vbo,
 
             n_vertices,
@@ -98,7 +100,7 @@ impl VertexBufferGL {
             vb.get_normals(),
             vb.get_colors(),
             vb.get_texcoords(),
-            vb.get_has_tex(),
+            vb.get_flags(),
             vb.get_indices(),
         )
     }
@@ -117,7 +119,7 @@ impl VertexBufferGL {
             vb.get_normals(),
             vb.get_texcoords(),
             vb.get_colors(),
-            vb.get_has_tex(),
+            vb.get_flags(),
             vb.get_indices(),
         );
     }
@@ -135,7 +137,7 @@ impl VertexBufferGL {
             vb.get_normals_slice(from_vertex, n_vertices),
             vb.get_texcoords_slice(from_vertex, n_vertices),
             vb.get_colors_slice(from_vertex, n_vertices),
-            vb.get_has_tex_slice(from_vertex, n_vertices),
+            vb.get_flags_slice(from_vertex, n_vertices),
             None,
         );
     }
@@ -147,14 +149,14 @@ impl VertexBufferGL {
         normals: &[f32],
         texcoords: &[f32],
         colors: &[f32],
-        has_tex: &[u8],
+        flags: &[u8],
         indices: Option<&[u32]>,
     ) {
         self.n_vertices = positions.len() / 3;
         if normals.len() / 3 != self.n_vertices
             || texcoords.len() / 2 != self.n_vertices
             || colors.len() / 4 != self.n_vertices
-            || has_tex.len() != self.n_vertices
+            || flags.len() != self.n_vertices
         {
             panic!("Can't set vertex buffer data with inconsistent number of components in the arrays");
         }
@@ -205,11 +207,11 @@ impl VertexBufferGL {
                 cast_slice_to_u8(colors),
             );
 
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.has_tex_vbo));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.flags_vbo));
             gl.buffer_sub_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 0,
-                cast_slice_to_u8(has_tex),
+                cast_slice_to_u8(flags),
             );
         }
     }
@@ -229,6 +231,9 @@ impl Program {
         #[cfg(not(target_os = "emscripten"))]
         let header = r#"#version 460 core
         "#;
+
+        let header =
+            header.to_owned() + &enum_to_shader_source::<VertexFlag>();
 
         unsafe {
             program = gl.create_program().expect("Cannot create program");
@@ -1263,4 +1268,17 @@ fn blit_framebuffer(
             glow::NEAREST,
         );
     }
+}
+
+fn enum_to_shader_source<T: Sequence + Debug + Copy + Into<u32>>() -> String
+{
+    let mut source = String::new();
+
+    for variant in all::<T>().collect::<Vec<_>>() {
+        let definition =
+            format!("const uint {:?} = {:?};\n", variant, variant.into());
+        source.push_str(&definition);
+    }
+
+    source
 }

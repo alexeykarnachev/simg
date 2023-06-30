@@ -1,16 +1,29 @@
 use crate::color::*;
+use enum_iterator::Sequence;
 use nalgebra::{Point2, Point3, Vector3};
 use obj::raw::object::Polygon;
 use obj::raw::parse_obj;
 
 const INIT_VERT_CAP: usize = 1 << 15;
 
+#[repr(u8)]
+#[derive(Sequence, Copy, Clone, Debug)]
+pub enum VertexFlag {
+    HasTexture = 1 << 0,
+    HasNormal = 1 << 1,
+}
+impl From<VertexFlag> for u32 {
+    fn from(e: VertexFlag) -> u32 {
+        e as u32
+    }
+}
+
 pub struct VertexBufferCPU {
     positions: Vec<f32>,
     normals: Vec<f32>,
     colors: Vec<f32>,
     texcoords: Vec<f32>,
-    has_tex: Vec<u8>,
+    flags: Vec<u8>,
     indices: Option<Vec<u32>>,
 }
 
@@ -20,7 +33,7 @@ impl VertexBufferCPU {
         normals: Vec<f32>,
         colors: Vec<f32>,
         texcoords: Vec<f32>,
-        has_tex: Vec<u8>,
+        flags: Vec<u8>,
         indices: Option<Vec<u32>>,
     ) -> Self {
         Self {
@@ -28,7 +41,7 @@ impl VertexBufferCPU {
             normals,
             colors,
             texcoords,
-            has_tex,
+            flags,
             indices,
         }
     }
@@ -45,6 +58,8 @@ impl VertexBufferCPU {
     }
 
     pub fn from_obj_bytes(bytes: &[u8]) -> Self {
+        use VertexFlag::*;
+
         let obj = parse_obj(bytes).unwrap();
 
         let mut positions = vec![];
@@ -82,9 +97,9 @@ impl VertexBufferCPU {
 
         let n_vertices = positions.len() / 3;
         let colors = vec![1.0; n_vertices * 4];
-        let has_tex = vec![1; n_vertices];
+        let flags = vec![HasTexture as u8 | HasNormal as u8; n_vertices];
 
-        Self::new(positions, normals, colors, texcoords, has_tex, None)
+        Self::new(positions, normals, colors, texcoords, flags, None)
     }
 
     pub fn push_vertex(
@@ -94,13 +109,17 @@ impl VertexBufferCPU {
         color: Option<Color>,
         texcoord: Option<Point2<f32>>,
     ) {
+        use VertexFlag::*;
+
         if self.indices.is_some() {
             panic!("Can't push vertex to the indexed vertex buffer");
         }
 
+        let mut flags = 0;
         self.positions.extend_from_slice(position.coords.as_ref());
         if let Some(normal) = normal {
             self.normals.extend_from_slice(normal.as_ref());
+            flags |= HasNormal as u8;
         } else {
             self.normals.extend_from_slice(&[0.0; 3]);
         }
@@ -109,11 +128,12 @@ impl VertexBufferCPU {
 
         if let Some(texcoord) = texcoord {
             self.texcoords.extend_from_slice(texcoord.coords.as_ref());
-            self.has_tex.push(1);
+            flags |= HasTexture as u8;
         } else {
             self.texcoords.extend_from_slice(&[0.0, 0.0]);
-            self.has_tex.push(0);
         }
+
+        self.flags.push(flags);
     }
 
     pub fn get_positions(&self) -> &[f32] {
@@ -132,8 +152,8 @@ impl VertexBufferCPU {
         &self.texcoords
     }
 
-    pub fn get_has_tex(&self) -> &[u8] {
-        &self.has_tex
+    pub fn get_flags(&self) -> &[u8] {
+        &self.flags
     }
 
     pub fn get_indices(&self) -> Option<&[u32]> {
@@ -172,12 +192,12 @@ impl VertexBufferCPU {
         &self.texcoords[from_vertex * 2..(from_vertex + n_vertices) * 2]
     }
 
-    pub fn get_has_tex_slice(
+    pub fn get_flags_slice(
         &self,
         from_vertex: usize,
         n_vertices: usize,
     ) -> &[u8] {
-        &self.has_tex[from_vertex..(from_vertex + n_vertices)]
+        &self.flags[from_vertex..(from_vertex + n_vertices)]
     }
 
     pub fn get_n_vertcies(&self) -> usize {
@@ -188,8 +208,8 @@ impl VertexBufferCPU {
         self.indices.as_ref().map_or(0, |data| data.len())
     }
 
-    pub fn set_has_tex(&mut self, has_tex: bool) {
-        self.has_tex.fill(has_tex as u8);
+    pub fn set_flags(&mut self, flags: u8) {
+        self.flags.fill(flags);
     }
 
     pub fn set_color(&mut self, color: Color) {
@@ -203,7 +223,7 @@ impl VertexBufferCPU {
         self.positions.clear();
         self.colors.clear();
         self.texcoords.clear();
-        self.has_tex.clear();
+        self.flags.clear();
         self.indices.as_mut().map(|data| data.clear());
     }
 }

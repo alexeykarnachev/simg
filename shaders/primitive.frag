@@ -3,7 +3,7 @@ const uint UTRUE = uint(1);
 in vec4 vs_color;
 in vec3 vs_normal;
 in vec2 vs_texcoord;
-flat in uint vs_has_tex;
+flat in uint vs_flags;
 
 out vec4 fs_color;
 
@@ -13,7 +13,7 @@ uniform uint u_is_font;
 void main() {
     vec4 color = vs_color;
 
-    if (vs_has_tex == UTRUE) {
+    if ((vs_flags & HasTexture) != 0) {
         vec2 uv = vs_texcoord;
         vec4 tex_color = texture(u_tex, uv); 
 
@@ -24,7 +24,7 @@ void main() {
         }
     }
 
-    if (length(vs_normal) > 0.01) {
+    if ((vs_flags & HasNormal) != 0) {
         float k = dot(normalize(vs_normal), -vec3(1.0, 0.0, 0.0));
         k = max(0.0, k);
         color = vec4(color.rgb * k, color.a);
