@@ -1275,8 +1275,11 @@ fn enum_to_shader_source<T: Sequence + Debug + Copy + Into<u32>>() -> String
     let mut source = String::new();
 
     for variant in all::<T>().collect::<Vec<_>>() {
-        let definition =
-            format!("const uint {:?} = uint({:?});\n", variant, variant.into());
+        let definition = format!(
+            "const uint {:?} = uint({:?});\n",
+            variant,
+            variant.into()
+        );
         source.push_str(&definition);
     }
 

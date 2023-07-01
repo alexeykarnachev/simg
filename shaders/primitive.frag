@@ -26,7 +26,7 @@ void main() {
     }
 
     if ((vs_flags & HasNormal) != UFALSE) {
-        float k = dot(normalize(vs_normal), -vec3(1.0, 0.0, 0.0));
+        float k = dot(normalize(vs_normal), vec3(0.0, 1.0, 0.0));
         k = max(0.0, k);
         color = vec4(color.rgb * k, color.a);
     }

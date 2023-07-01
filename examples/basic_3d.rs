@@ -1,3 +1,4 @@
+use crate::VertexFlag::HasNormal;
 use image::ImageFormat;
 use nalgebra::{point, vector, Point3};
 use sdl2::mouse::MouseButton;
@@ -15,8 +16,9 @@ const GAME_DT: f32 = 0.005;
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 
-const DOG_OBJ: &[u8] = include_bytes!("./assets/basic_3d/dog/dog.obj");
-const DOG_TEX: &[u8] = include_bytes!("./assets/basic_3d/dog/color.png");
+// const OBJ: &[u8] = include_bytes!("./assets/basic_3d/dog/dog.obj");
+const OBJ: &[u8] = include_bytes!("./assets/basic_3d/house/house.obj");
+const TEX: &[u8] = include_bytes!("./assets/basic_3d/dog/color.png");
 
 struct ArcballCamera {
     pub target: Point3<f32>,
@@ -115,11 +117,12 @@ impl Game {
             60.0,
         );
 
-        let vb_gpu = renderer.load_vertex_buffer_from_cpu(
-            &VertexBufferCPU::from_obj_bytes(DOG_OBJ),
-        );
-        let tex = renderer
-            .load_texture_from_image_bytes(DOG_TEX, ImageFormat::Png);
+        let mut vb_cpu = VertexBufferCPU::from_obj_bytes(OBJ);
+        vb_cpu.set_color(RED);
+        vb_cpu.set_flags(HasNormal as u8);
+        let vb_gpu = renderer.load_vertex_buffer_from_cpu(&vb_cpu);
+        let tex =
+            renderer.load_texture_from_image_bytes(TEX, ImageFormat::Png);
 
         Self {
             dt: 0.0,
@@ -166,7 +169,7 @@ impl Game {
         self.renderer.set_depth_test(true);
         self.renderer.set_proj(self.camera.get_proj(aspect));
         self.renderer.set_camera(self.camera.get_camera());
-        self.renderer.set_tex(self.tex, false);
+        // self.renderer.set_tex(self.tex, false);
 
         let triangle = Triangle::new(
             point![0.0, 0.0, 0.0],
@@ -183,15 +186,17 @@ impl Game {
         self.renderer
             .draw_triangle(triangle, None, None, Some(GREEN));
 
-        for i in 0..15 {
+        for i in 0..1 {
             let transform = Transformation::new(
                 vector![
-                    i as f32 * 4.0,
-                    self.time.sin() * 3.0,
-                    self.time.cos() * 3.0
+                    // i as f32 * 4.0,
+                    // self.time.sin() * 3.0,
+                    // self.time.cos() * 3.0
+                    0.0, 0.0, 0.0
                 ],
                 vector![1.0, 1.0, 1.0],
-                vector![0.0, 0.0, self.time / 2.0],
+                // vector![0.0, 0.0, self.time / 2.0],
+                vector![0.0, 0.0, 0.0],
             );
             self.renderer
                 .draw_vertex_buffer(self.vb_gpu, Some(transform));

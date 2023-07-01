@@ -65,18 +65,59 @@ impl VertexBufferCPU {
         let mut positions = vec![];
         let mut normals = vec![];
         let mut texcoords = vec![];
+        let mut flags = vec![];
+
+        println!("groups: {:?}", obj.groups);
+        println!("meshes: {:?}", obj.meshes);
 
         use Polygon::*;
         for polygon in obj.polygons {
             match polygon {
                 P(p) => {
-                    println!("a")
+                    for v in p.iter() {
+                        positions.push(obj.positions[*v].0);
+                        positions.push(obj.positions[*v].1);
+                        positions.push(obj.positions[*v].2);
+
+                        normals.push(0.0);
+                        normals.push(0.0);
+                        normals.push(0.0);
+
+                        texcoords.push(0.0);
+                        texcoords.push(0.0);
+                    }
                 }
                 PT(pt) => {
-                    println!("b")
+                    for v in pt.iter() {
+                        positions.push(obj.positions[v.0].0);
+                        positions.push(obj.positions[v.0].1);
+                        positions.push(obj.positions[v.0].2);
+
+                        normals.push(0.0);
+                        normals.push(0.0);
+                        normals.push(0.0);
+
+                        texcoords.push(obj.tex_coords[v.1].0);
+                        texcoords.push(obj.tex_coords[v.1].1);
+
+                        flags.push(HasTexture as u8);
+                    }
                 }
                 PN(pn) => {
-                    println!("c")
+                    for v in pn.iter() {
+                        positions.push(obj.positions[v.0].0);
+                        positions.push(obj.positions[v.0].1);
+                        positions.push(obj.positions[v.0].2);
+
+                        normals.push(obj.normals[v.1].0);
+                        normals.push(obj.normals[v.1].1);
+                        normals.push(obj.normals[v.1].2);
+
+                        texcoords.push(0.0);
+                        texcoords.push(0.0);
+
+                        flags.push(HasNormal as u8);
+                    }
                 }
                 PTN(ptn) => {
                     for v in ptn.iter() {
@@ -90,6 +131,8 @@ impl VertexBufferCPU {
 
                         texcoords.push(obj.tex_coords[v.1].0);
                         texcoords.push(obj.tex_coords[v.1].1);
+
+                        flags.push(HasNormal as u8 | HasTexture as u8);
                     }
                 }
             }
@@ -97,7 +140,6 @@ impl VertexBufferCPU {
 
         let n_vertices = positions.len() / 3;
         let colors = vec![1.0; n_vertices * 4];
-        let flags = vec![HasTexture as u8 | HasNormal as u8; n_vertices];
 
         Self::new(positions, normals, colors, texcoords, flags, None)
     }
