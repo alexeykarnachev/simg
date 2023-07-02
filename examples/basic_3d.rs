@@ -16,8 +16,8 @@ const GAME_DT: f32 = 0.005;
 const WINDOW_WIDTH: f32 = 800.0;
 const WINDOW_HEIGHT: f32 = 600.0;
 
-// const OBJ: &[u8] = include_bytes!("./assets/basic_3d/dog/dog.obj");
-const OBJ: &[u8] = include_bytes!("./assets/basic_3d/house/house.obj");
+const OBJ: &[u8] = include_bytes!("./assets/basic_3d/dog/dog.obj");
+// const OBJ: &[u8] = include_bytes!("./assets/basic_3d/house/house.obj");
 const TEX: &[u8] = include_bytes!("./assets/basic_3d/dog/color.png");
 
 struct ArcballCamera {
@@ -118,8 +118,8 @@ impl Game {
         );
 
         let mut vb_cpu = VertexBufferCPU::from_obj_bytes(OBJ);
-        vb_cpu.set_colors(RED);
-        vb_cpu.unset_flags(HasTexture as u8);
+        // vb_cpu.set_colors(Color::gray(0.3, 1.0));
+        // vb_cpu.unset_flags(HasTexture as u8);
         let vb_gpu = renderer.load_vertex_buffer_from_cpu(&vb_cpu);
         let tex =
             renderer.load_texture_from_image_bytes(TEX, ImageFormat::Png);
@@ -169,7 +169,7 @@ impl Game {
         self.renderer.set_depth_test(true);
         self.renderer.set_proj(self.camera.get_proj(aspect));
         self.renderer.set_camera(self.camera.get_camera());
-        // self.renderer.set_tex(self.tex, false);
+        self.renderer.set_tex(self.tex, false);
 
         let triangle = Triangle::new(
             point![0.0, 0.0, 0.0],
@@ -186,7 +186,11 @@ impl Game {
         self.renderer
             .draw_triangle(triangle, None, None, Some(GREEN));
 
-        self.renderer.draw_vertex_buffer(self.vb_gpu, None);
+        self.renderer.draw_vertex_buffer(
+            self.vb_gpu,
+            None,
+            Material::BlinnPhong { shininess: 16.0 },
+        );
         // for i in 0..1 {
         //     let transform = Transformation::new(
         //         vector![

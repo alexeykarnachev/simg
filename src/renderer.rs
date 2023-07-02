@@ -308,6 +308,29 @@ impl Program {
         }
     }
 
+    fn set_uniform_1_f32(&self, gl: &glow::Context, name: &str, val: f32) {
+        unsafe {
+            gl.uniform_1_f32(
+                gl.get_uniform_location(self.to_glow(), name).as_ref(),
+                val,
+            );
+        }
+    }
+
+    fn set_uniform_3_f32(
+        &self,
+        gl: &glow::Context,
+        name: &str,
+        val: &[f32; 3],
+    ) {
+        unsafe {
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.to_glow(), name).as_ref(),
+                val,
+            );
+        }
+    }
+
     fn set_uniform_1_i32(&self, gl: &glow::Context, name: &str, val: i32) {
         unsafe {
             gl.uniform_1_i32(
@@ -430,6 +453,7 @@ struct DrawCall {
     transform: Option<Transformation>,
     camera: Option<Camera>,
     proj: Option<Projection>,
+    material: Material,
     is_font: bool,
     depth_test: bool,
 }
@@ -443,6 +467,7 @@ impl DrawCall {
         transform: Option<Transformation>,
         camera: Option<Camera>,
         proj: Option<Projection>,
+        material: Material,
         is_font: bool,
         depth_test: bool,
     ) -> Self {
@@ -454,6 +479,7 @@ impl DrawCall {
             transform,
             camera,
             proj,
+            material,
             is_font,
             depth_test,
         }
@@ -842,6 +868,7 @@ impl Renderer {
         &mut self,
         vb_idx: usize,
         transform: Option<Transformation>,
+        material: Material,
     ) {
         let vb = self.vertex_buffers[vb_idx];
         let mut draw_call = self.get_new_draw_call();
@@ -849,12 +876,14 @@ impl Renderer {
         draw_call.from_vertex = 0;
         draw_call.n_vertices = vb.n_vertices;
         draw_call.transform = transform;
+        draw_call.material = material;
     }
 
     pub fn draw_vertex_buffer_slice(
         &mut self,
         vb_idx: usize,
         transform: Option<Transformation>,
+        material: Material,
         from_vertex: usize,
         n_vertices: usize,
     ) {
@@ -863,6 +892,7 @@ impl Renderer {
         draw_call.from_vertex = from_vertex;
         draw_call.n_vertices = n_vertices;
         draw_call.transform = transform;
+        draw_call.material = material;
     }
 
     pub fn set_proj(&mut self, proj: Projection) {
@@ -932,6 +962,7 @@ impl Renderer {
                 transform: None,
                 camera: curr.camera,
                 proj: curr.proj,
+                material: curr.material,
                 is_font: curr.is_font,
                 depth_test: curr.depth_test,
             };
@@ -991,38 +1022,52 @@ impl Renderer {
                 }
 
                 let vb_idx = draw_call.vb_idx;
-                let model = draw_call
+                let model_mat = draw_call
                     .transform
                     .as_ref()
                     .map_or(Matrix4::identity(), |t| t.get_mat());
-                let view = if let Some(camera) = draw_call.camera.as_ref()
+                let view_mat = if let Some(camera) =
+                    draw_call.camera.as_ref()
                 {
                     camera.get_mat()
                 } else {
                     panic!("The draw call doesn't have camera. Call `renderer.set_camera` before drawing");
                 };
-                let proj = if let Some(proj) = draw_call.proj.as_ref() {
+                let proj_mat = if let Some(proj) = draw_call.proj.as_ref()
+                {
                     proj.get_mat()
                 } else {
                     panic!("The draw call doesn't have projection. Call `renderer.set_proj` before drawing");
                 };
-                let position_mat = proj * view * model;
-                let normal_mat = Matrix3::from_fn(|i, j| model[(i, j)])
-                    .try_inverse()
-                    .unwrap()
-                    .transpose();
 
                 self.program.set_uniform_matrix_4_f32(
                     &self.gl,
-                    "u_position_mat",
-                    position_mat.as_slice(),
+                    "u_model_mat",
+                    model_mat.as_slice(),
+                );
+                self.program.set_uniform_matrix_4_f32(
+                    &self.gl,
+                    "u_view_mat",
+                    view_mat.as_slice(),
+                );
+                self.program.set_uniform_matrix_4_f32(
+                    &self.gl,
+                    "u_proj_mat",
+                    proj_mat.as_slice(),
                 );
 
-                self.program.set_uniform_matrix_3_f32(
-                    &self.gl,
-                    "u_normal_mat",
-                    normal_mat.as_slice(),
-                );
+                if let Some(camera) = draw_call.camera {
+                    match camera {
+                        Camera::Cam3D { position, .. } => {
+                            self.program.set_uniform_3_f32(
+                                &self.gl,
+                                "u_camera_pos",
+                                position.coords.as_ref(),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
 
                 if curr_vb_idx.is_none()
                     || curr_vb_idx.is_some_and(|idx| idx != vb_idx)
@@ -1055,6 +1100,22 @@ impl Renderer {
                             draw_call.is_font as u32,
                         );
                     }
+                }
+
+                match draw_call.material {
+                    Material::BlinnPhong { shininess } => {
+                        self.program.set_uniform_1_u32(
+                            &self.gl,
+                            "u_is_blinn_phong",
+                            1,
+                        );
+                        self.program.set_uniform_1_f32(
+                            &self.gl,
+                            "u_shininess",
+                            shininess,
+                        );
+                    }
+                    _ => {}
                 }
 
                 let vb = &mut self.vertex_buffers[vb_idx];

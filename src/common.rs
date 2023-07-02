@@ -288,3 +288,12 @@ impl Projection {
         }
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
+pub enum Material {
+    #[default]
+    VertexColor,
+    BlinnPhong {
+        shininess: f32,
+    },
+}
