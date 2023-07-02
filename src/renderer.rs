@@ -424,8 +424,8 @@ impl Texture {
 #[derive(Debug, Clone, Default)]
 struct DrawCall {
     vb_idx: usize,
-    start: usize,
-    count: usize,
+    from_vertex: usize,
+    n_vertices: usize,
     tex: Option<Texture>,
     transform: Option<Transformation>,
     camera: Option<Camera>,
@@ -437,7 +437,8 @@ struct DrawCall {
 impl DrawCall {
     pub fn new(
         vb_idx: usize,
-        start: usize,
+        from_vertex: usize,
+        n_vertices: usize,
         tex: Option<Texture>,
         transform: Option<Transformation>,
         camera: Option<Camera>,
@@ -447,8 +448,8 @@ impl DrawCall {
     ) -> Self {
         Self {
             vb_idx,
-            start,
-            count: 0,
+            from_vertex,
+            n_vertices,
             tex,
             transform,
             camera,
@@ -761,7 +762,7 @@ impl Renderer {
         texcoord: Option<Point2<f32>>,
     ) {
         let draw_call = self.get_default_draw_call();
-        draw_call.count += 1;
+        draw_call.n_vertices += 1;
 
         self.vb_cpu.push_vertex(position, normal, color, texcoord);
     }
@@ -843,10 +844,24 @@ impl Renderer {
         transform: Option<Transformation>,
     ) {
         let vb = self.vertex_buffers[vb_idx];
-
         let mut draw_call = self.get_new_draw_call();
         draw_call.vb_idx = vb_idx;
-        draw_call.count = vb.n_vertices;
+        draw_call.from_vertex = 0;
+        draw_call.n_vertices = vb.n_vertices;
+        draw_call.transform = transform;
+    }
+
+    pub fn draw_vertex_buffer_slice(
+        &mut self,
+        vb_idx: usize,
+        transform: Option<Transformation>,
+        from_vertex: usize,
+        n_vertices: usize,
+    ) {
+        let mut draw_call = self.get_new_draw_call();
+        draw_call.vb_idx = vb_idx;
+        draw_call.from_vertex = from_vertex;
+        draw_call.n_vertices = n_vertices;
         draw_call.transform = transform;
     }
 
@@ -907,12 +922,12 @@ impl Renderer {
     fn get_new_draw_call(&mut self) -> &mut DrawCall {
         if self.draw_calls.len() == 0 {
             self.draw_calls.push(DrawCall::default());
-        } else if self.get_curr_draw_call().count != 0 {
+        } else if self.get_curr_draw_call().n_vertices != 0 {
             let curr = self.get_curr_draw_call().clone();
             let new = DrawCall {
                 vb_idx: 0,
-                start: self.vb_cpu.get_n_vertcies(),
-                count: 0,
+                from_vertex: self.vb_cpu.get_n_vertcies(),
+                n_vertices: 0,
                 tex: curr.tex,
                 transform: None,
                 camera: curr.camera,
@@ -1021,8 +1036,8 @@ impl Renderer {
                     self.vertex_buffers[0].set_from_cpu_slice(
                         &self.gl,
                         &self.vb_cpu,
-                        draw_call.start,
-                        draw_call.count,
+                        draw_call.from_vertex,
+                        draw_call.n_vertices,
                     );
                 }
 
@@ -1057,8 +1072,8 @@ impl Renderer {
                 } else {
                     self.gl.draw_arrays(
                         glow::TRIANGLES,
-                        0,
-                        draw_call.count as i32,
+                        draw_call.from_vertex as i32,
+                        draw_call.n_vertices as i32,
                     );
                 }
             }

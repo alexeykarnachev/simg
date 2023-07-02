@@ -186,21 +186,22 @@ impl Game {
         self.renderer
             .draw_triangle(triangle, None, None, Some(GREEN));
 
-        for i in 0..1 {
-            let transform = Transformation::new(
-                vector![
-                    // i as f32 * 4.0,
-                    // self.time.sin() * 3.0,
-                    // self.time.cos() * 3.0
-                    0.0, 0.0, 0.0
-                ],
-                vector![1.0, 1.0, 1.0],
-                // vector![0.0, 0.0, self.time / 2.0],
-                vector![0.0, 0.0, 0.0],
-            );
-            self.renderer
-                .draw_vertex_buffer(self.vb_gpu, Some(transform));
-        }
+        self.renderer.draw_vertex_buffer(self.vb_gpu, None);
+        // for i in 0..1 {
+        //     let transform = Transformation::new(
+        //         vector![
+        //             // i as f32 * 4.0,
+        //             // self.time.sin() * 3.0,
+        //             // self.time.cos() * 3.0
+        //             0.0, 0.0, 0.0
+        //         ],
+        //         vector![1.0, 1.0, 1.0],
+        //         // vector![0.0, 0.0, self.time / 2.0],
+        //         vector![0.0, 0.0, 0.0],
+        //     );
+        //     self.renderer
+        //         .draw_vertex_buffer(self.vb_gpu, Some(transform));
+        // }
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();

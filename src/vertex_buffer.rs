@@ -67,9 +67,6 @@ impl VertexBufferCPU {
         let mut texcoords = vec![];
         let mut flags = vec![];
 
-        println!("groups: {:?}", obj.groups);
-        println!("meshes: {:?}", obj.meshes);
-
         use Polygon::*;
         for polygon in obj.polygons {
             match polygon {
