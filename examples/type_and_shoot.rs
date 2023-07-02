@@ -3,7 +3,6 @@ use nalgebra::{point, vector, Point2, Vector2};
 use rand::seq::SliceRandom;
 use sdl2::keyboard::Keycode;
 use simg::color::*;
-use simg::common::Projection::*;
 use simg::common::*;
 use simg::geometry::*;
 use simg::glyph_atlas::GlyphAtlas;

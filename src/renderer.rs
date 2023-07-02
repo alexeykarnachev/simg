@@ -6,7 +6,7 @@ use crate::vertex_buffer::*;
 use core::fmt::Debug;
 use enum_iterator::{all, Sequence};
 use image::{load_from_memory_with_format, EncodableLayout, ImageFormat};
-use nalgebra::{point, Matrix3, Matrix4, Point2, Point3, Vector3};
+use nalgebra::{point, Matrix4, Point2, Point3, Vector3};
 use std::num::NonZeroU32;
 
 use glow::HasContext;
@@ -990,6 +990,15 @@ impl Renderer {
             point![0.0, 0.0],
             point![window_size.0 as f32, window_size.1 as f32],
         );
+
+        // Update default gpu buffer by cpu data
+        self.vertex_buffers[0].set_from_cpu_slice(
+            &self.gl,
+            &self.vb_cpu,
+            0,
+            self.vb_cpu.get_n_vertcies(),
+        );
+
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
 
@@ -1074,16 +1083,6 @@ impl Renderer {
                 {
                     curr_vb_idx = Some(vb_idx);
                     self.vertex_buffers[vb_idx].bind(&self.gl);
-                }
-
-                // Update default vertex buffer
-                if vb_idx == 0 {
-                    self.vertex_buffers[0].set_from_cpu_slice(
-                        &self.gl,
-                        &self.vb_cpu,
-                        draw_call.from_vertex,
-                        draw_call.n_vertices,
-                    );
                 }
 
                 if let Some(tex) = draw_call.tex {

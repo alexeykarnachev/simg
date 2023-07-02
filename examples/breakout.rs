@@ -1,13 +1,9 @@
-#![allow(unused_variables)]
-#![allow(unused_mut)]
-
 use core::f32::consts::PI;
 use nalgebra::{point, Point2, Vector2};
 use rand::Rng;
 use sdl2::keyboard::Keycode;
 use simg::audio_player::AudioPlayer;
 use simg::color::*;
-use simg::common::Projection::*;
 use simg::common::*;
 use simg::geometry::*;
 use simg::glyph_atlas::*;
@@ -403,13 +399,11 @@ impl Game {
         let paddle_min_x = self.paddle.rect.get_min_x();
         let paddle_max_x = self.paddle.rect.get_max_x();
         let paddle_min_y = self.paddle.rect.get_min_y();
-        let paddle_max_y = self.paddle.rect.get_max_y();
 
         let ball_min_x = self.ball.circle.get_min_x();
         let ball_max_x = self.ball.circle.get_max_x();
         let ball_max_y = self.ball.circle.get_max_y();
         let ball_min_y = self.ball.circle.get_min_y();
-        let ball_radius = self.ball.circle.radius;
 
         if ball_min_x < field_min_x {
             self.ball.velocity = reflect(&self.ball.velocity, &RIGHT);
@@ -439,9 +433,6 @@ impl Game {
             self.state = State::NotStarted;
             self.ball.is_dead = true;
             self.game_over_time = Some(self.time);
-            // self.ball.velocity = reflect(&self.ball.velocity, &UP);
-            // self.ball.circle.center.y =
-            //     field_min_y + self.ball.circle.radius;
 
             self.audio_player.play_chunk(self.ball_death_sound);
             self.audio_player.fade_out_music(800);
