@@ -1,4 +1,4 @@
-use crate::VertexFlag::HasNormal;
+use crate::VertexFlag::*;
 use image::ImageFormat;
 use nalgebra::{point, vector, Point3};
 use sdl2::mouse::MouseButton;
@@ -118,8 +118,8 @@ impl Game {
         );
 
         let mut vb_cpu = VertexBufferCPU::from_obj_bytes(OBJ);
-        vb_cpu.set_color(RED);
-        vb_cpu.set_flags(HasNormal as u8);
+        vb_cpu.set_colors(RED);
+        vb_cpu.unset_flags(HasTexture as u8);
         let vb_gpu = renderer.load_vertex_buffer_from_cpu(&vb_cpu);
         let tex =
             renderer.load_texture_from_image_bytes(TEX, ImageFormat::Png);

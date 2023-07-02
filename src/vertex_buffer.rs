@@ -251,12 +251,47 @@ impl VertexBufferCPU {
     }
 
     pub fn set_flags(&mut self, flags: u8) {
-        self.flags.fill(flags);
+        self.set_flags_slice(flags, 0, self.get_n_vertcies());
     }
 
-    pub fn set_color(&mut self, color: Color) {
+    pub fn unset_flags(&mut self, flags: u8) {
+        self.unset_flags_slice(flags, 0, self.get_n_vertcies());
+    }
+
+    pub fn set_colors(&mut self, color: Color) {
+        self.set_colors_slice(color, 0, self.get_n_vertcies());
+    }
+
+    pub fn set_flags_slice(
+        &mut self,
+        flags: u8,
+        from_vertex: usize,
+        n_vertices: usize,
+    ) {
+        self.flags[from_vertex..from_vertex + n_vertices].fill(flags);
+    }
+
+    pub fn unset_flags_slice(
+        &mut self,
+        flags: u8,
+        from_vertex: usize,
+        n_vertices: usize,
+    ) {
+        for i in from_vertex..from_vertex + n_vertices {
+            self.flags[i] &= !flags;
+        }
+    }
+
+    pub fn set_colors_slice(
+        &mut self,
+        color: Color,
+        from_vertex: usize,
+        n_vertices: usize,
+    ) {
         let color = color.as_arr();
-        for i in 0..self.colors.len() {
+        let start = from_vertex * 4;
+        let end = (from_vertex + n_vertices) * 4;
+        for i in start..end {
             self.colors[i] = color[i % 4];
         }
     }
