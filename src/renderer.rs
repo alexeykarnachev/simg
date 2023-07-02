@@ -499,6 +499,7 @@ pub struct Renderer {
     vb_cpu: VertexBufferCPU,
     vertex_buffers: Vec<VertexBufferGL>,
     draw_calls: Vec<DrawCall>,
+    lights: Vec<Light>,
 }
 
 impl Renderer {
@@ -673,6 +674,7 @@ impl Renderer {
             vb_cpu: VertexBufferCPU::new_empty(),
             vertex_buffers,
             draw_calls: Vec::with_capacity(128),
+            lights: Vec::with_capacity(128),
         }
     }
 
@@ -940,6 +942,10 @@ impl Renderer {
         }
     }
 
+    pub fn set_light(&mut self, light: Light) {
+        self.lights.push(light);
+    }
+
     fn get_curr_draw_call(&mut self) -> &mut DrawCall {
         if self.draw_calls.len() == 0 {
             return self.get_new_draw_call();
@@ -1078,6 +1084,29 @@ impl Renderer {
                     }
                 }
 
+                for (i, light) in self.lights.iter().enumerate() {
+                    self.program.set_uniform_3_f32(
+                        &self.gl,
+                        &format!("u_lights[{}].position", i),
+                        light.position.coords.as_ref(),
+                    );
+                    self.program.set_uniform_3_f32(
+                        &self.gl,
+                        &format!("u_lights[{}].color", i),
+                        &light.color.as_rgb_arr(),
+                    );
+                    self.program.set_uniform_1_u32(
+                        &self.gl,
+                        &format!("u_lights[{}].is_dir", i),
+                        light.is_dir as u32,
+                    );
+                }
+                self.program.set_uniform_1_u32(
+                    &self.gl,
+                    "u_n_lights",
+                    self.lights.len() as u32,
+                );
+
                 if curr_vb_idx.is_none()
                     || curr_vb_idx.is_some_and(|idx| idx != vb_idx)
                 {
@@ -1183,6 +1212,7 @@ impl Renderer {
 
         self.draw_calls.clear();
         self.vb_cpu.clear();
+        self.lights.clear();
     }
 
     pub fn swap_window(&self) {

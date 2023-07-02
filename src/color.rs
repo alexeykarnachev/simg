@@ -15,6 +15,10 @@ impl Color {
         [self.r, self.g, self.b, self.a]
     }
 
+    pub fn as_rgb_arr(&self) -> [f32; 3] {
+        [self.r, self.g, self.b]
+    }
+
     pub fn gray(c: f32, a: f32) -> Self {
         Self { r: c, g: c, b: c, a }
     }

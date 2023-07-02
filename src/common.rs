@@ -297,3 +297,16 @@ pub enum Material {
         shininess: f32,
     },
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Light {
+    pub position: Point3<f32>,
+    pub color: Color,
+    pub is_dir: bool,
+}
+
+impl Light {
+    pub fn new(position: Point3<f32>, color: Color, is_dir: bool) -> Self {
+        Self { position, color, is_dir }
+    }
+}

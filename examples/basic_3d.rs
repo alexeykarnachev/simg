@@ -171,6 +171,22 @@ impl Game {
         self.renderer.set_camera(self.camera.get_camera());
         self.renderer.set_tex(self.tex, false);
 
+        self.renderer.set_light(Light::new(
+            point![0.0, -1.0, 0.0],
+            Color::new(0.8, 0.6, 0.6, 1.0),
+            true,
+        ));
+        self.renderer.set_light(Light::new(
+            point![1.0, 0.0, 0.0],
+            Color::new(0.6, 0.8, 0.6, 1.0),
+            true,
+        ));
+        self.renderer.set_light(Light::new(
+            point![-1.0, 0.0, 0.0],
+            Color::new(0.6, 0.6, 0.8, 1.0),
+            true,
+        ));
+
         let triangle = Triangle::new(
             point![0.0, 0.0, 0.0],
             point![0.5, 0.0, 0.0],
@@ -186,26 +202,22 @@ impl Game {
         self.renderer
             .draw_triangle(triangle, None, None, Some(GREEN));
 
-        self.renderer.draw_vertex_buffer(
-            self.vb_gpu,
-            None,
-            Material::BlinnPhong { shininess: 16.0 },
-        );
-        // for i in 0..1 {
-        //     let transform = Transformation::new(
-        //         vector![
-        //             // i as f32 * 4.0,
-        //             // self.time.sin() * 3.0,
-        //             // self.time.cos() * 3.0
-        //             0.0, 0.0, 0.0
-        //         ],
-        //         vector![1.0, 1.0, 1.0],
-        //         // vector![0.0, 0.0, self.time / 2.0],
-        //         vector![0.0, 0.0, 0.0],
-        //     );
-        //     self.renderer
-        //         .draw_vertex_buffer(self.vb_gpu, Some(transform));
-        // }
+        for i in 0..400 {
+            let transform = Transformation::new(
+                vector![
+                    i as f32 * 1.0,
+                    self.time.sin() * 3.0,
+                    self.time.cos() * 3.0
+                ],
+                vector![1.0, 1.0, 1.0],
+                vector![0.0, 0.0, self.time / 2.0],
+            );
+            self.renderer.draw_vertex_buffer(
+                self.vb_gpu,
+                Some(transform),
+                Material::BlinnPhong { shininess: 32.0 },
+            );
+        }
 
         self.renderer.end_drawing(PRUSSIAN_BLUE, None);
         self.renderer.swap_window();
